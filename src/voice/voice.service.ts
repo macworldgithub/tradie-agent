@@ -164,7 +164,11 @@ export class VoiceService {
       // Configuration message for ElevenLabs
       elWs.send(JSON.stringify({
         text: ' ',
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+        voice_settings: { 
+        stability: 0.4, 
+        similarity_boost: 0.75,
+        speed: 1.15
+       },
         xi_api_key: apiKey,
       }));
 
