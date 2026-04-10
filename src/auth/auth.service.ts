@@ -1,240 +1,126 @@
 import {
-  Injectable,
   BadRequestException,
+  Injectable,
+  NotFoundException,
   UnauthorizedException,
-  Logger,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
-import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { User, UserDocument } from './schemas/user.schema';
-import {
-  RefreshToken,
-  RefreshTokenDocument,
-} from './schemas/refresh-token.schema';
 import { RegisterDto } from './dtos/register.dto';
 import { LoginDto } from './dtos/login.dto';
-import { ForgotPasswordDto } from './dtos/forgot-password.dto';
-import { ResetPasswordDto } from './dtos/reset-password.dto';
-import { ChangePasswordDto } from './dtos/change-password.dto';
-import { EmailService } from '../common/services/email.service';
-import { generateToken, getExpiryDate } from './utils/token.util';
+import { MailService } from '../common/mail/mail.service';
+import { generateToken } from './utils/token.util';
 
 @Injectable()
 export class AuthService {
-  private readonly logger = new Logger(AuthService.name);
-
   constructor(
-    @InjectModel(User.name)
-    private readonly userModel: Model<UserDocument>,
-    @InjectModel(RefreshToken.name)
-    private readonly refreshTokenModel: Model<RefreshTokenDocument>,
-    private readonly jwtService: JwtService,
-    private readonly emailService: EmailService,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private jwtService: JwtService,
+    private configService: ConfigService,
+    private mailService: MailService,
   ) {}
 
-  // ─── REGISTER ─────────────────────────────────────────────────
+  private async signToken(userId: string, email: string) {
+    const payload = { sub: userId, email };
+    return this.jwtService.signAsync(payload, {
+      secret: this.configService.get('JWT_SECRET'),
+      expiresIn: '7d',
+    });
+  }
 
   async register(dto: RegisterDto) {
-    // Check if email already exists
-    const existing = await this.userModel.findOne({ email: dto.email });
-    if (existing) {
-      throw new BadRequestException('Email already registered');
-    }
+    const existing = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    if (existing) throw new BadRequestException('Email already registered');
 
-    // Hash the password
-    const hashedPassword = await bcrypt.hash(dto.password, 12);
+    const hashedPassword = await bcrypt.hash(dto.password, 10);
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Generate email verification token
-    const emailVerificationToken = generateToken();
-
-    // Create user
-    const user = await this.userModel.create({
+    const newUser = new this.userModel({
       ...dto,
       password: hashedPassword,
-      emailVerificationToken,
+      emailVerified: false,
+      emailVerificationToken: otp,
     });
 
-    // Send verification email (mock)
-    await this.emailService.sendVerificationEmail(
-      user.email,
-      emailVerificationToken,
-    );
-
-    this.logger.log(`User registered: ${user.email}`);
+    await newUser.save();
+    await this.mailService.sendOtpEmail(dto.email, otp);
 
     return {
-      message:
-        'Registration successful. Please check your email to verify your account.',
-      userId: user._id,
+      message: 'User registered successfully. Please verify your email using the OTP sent.',
+      userId: newUser._id,
     };
   }
 
-  // ─── LOGIN ────────────────────────────────────────────────────
-
   async login(dto: LoginDto) {
-    // Find user by email
-    const user = await this.userModel.findOne({ email: dto.email });
-    if (!user) {
-      throw new UnauthorizedException('Invalid email or password');
+    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    if (!user) throw new UnauthorizedException('Invalid credentials');
+
+    const valid = await bcrypt.compare(dto.password, user.password);
+    if (!valid) throw new UnauthorizedException('Invalid credentials');
+
+    if (!user.emailVerified) {
+      throw new UnauthorizedException('Email not verified');
     }
 
-    // Compare password
-    const isMatch = await bcrypt.compare(dto.password, user.password);
-    if (!isMatch) {
-      throw new UnauthorizedException('Invalid email or password');
-    }
-
-    // Generate access token (15 min)
-    const accessToken = this.jwtService.sign({
-      sub: user._id,
-      email: user.email,
-    });
-
-    // Generate refresh token (7 days) and store in DB
-    const refreshTokenValue = generateToken();
-    await this.refreshTokenModel.create({
-      userId: user._id,
-      token: refreshTokenValue,
-      expiresAt: getExpiryDate(7),
-    });
-
-    this.logger.log(`User logged in: ${user.email}`);
+    const token = await this.signToken(user._id.toString(), user.email);
 
     return {
-      accessToken,
-      refreshToken: refreshTokenValue,
+      accessToken: token,
       user: {
         id: user._id,
         email: user.email,
         customerName: user.customerName,
-        emailVerified: user.emailVerified,
+        companyName: user.companyName,
       },
     };
   }
 
-  // ─── LOGOUT ───────────────────────────────────────────────────
-
-  async logout(refreshToken: string) {
-    const token = await this.refreshTokenModel.findOne({
-      token: refreshToken,
-    });
-    if (!token) {
-      throw new BadRequestException('Invalid refresh token');
-    }
-
-    token.isRevoked = true;
-    await token.save();
-
-    return { message: 'Logged out successfully' };
-  }
-
-  // ─── REFRESH TOKEN ────────────────────────────────────────────
-
-  async refreshToken(refreshTokenValue: string) {
-    const storedToken = await this.refreshTokenModel.findOne({
-      token: refreshTokenValue,
-      isRevoked: false,
-    });
-
-    if (!storedToken || storedToken.expiresAt < new Date()) {
-      throw new UnauthorizedException('Refresh token expired or invalid');
-    }
-
-    // Find the user
-    const user = await this.userModel.findById(storedToken.userId);
+  async forgotPasswordEmail(email: string) {
+    const user = await this.userModel.findOne({ email: email.toLowerCase() });
     if (!user) {
-      throw new UnauthorizedException('User not found');
+      // For security, don't reveal if user exists
+      return { message: 'If the email exists, a new password will be sent.' };
     }
 
-    // Issue new access token
-    const accessToken = this.jwtService.sign({
-      sub: user._id,
-      email: user.email,
-    });
+    const newPassword = generateToken().slice(0, 10);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    return { accessToken };
-  }
-
-  // ─── EMAIL VERIFICATION ───────────────────────────────────────
-
-  async verifyEmail(token: string) {
-    const user = await this.userModel.findOne({
-      emailVerificationToken: token,
-    });
-
-    if (!user) {
-      throw new BadRequestException('Invalid verification token');
-    }
-
-    user.emailVerified = true;
-    user.emailVerificationToken = null as any;
+    user.password = hashedPassword;
     await user.save();
 
-    this.logger.log(`Email verified: ${user.email}`);
+    await this.mailService.sendNewPasswordEmail(user.email, newPassword);
+
+    return { message: 'If the email exists, a new password has been sent.' };
+  }
+
+  async verifyOtp(email: string, otp: string) {
+    const user = await this.userModel.findOne({
+      email: email.toLowerCase(),
+      emailVerificationToken: otp,
+    });
+
+    if (!user) throw new BadRequestException('Invalid OTP or email');
+
+    user.emailVerified = true;
+    user.emailVerificationToken = undefined;
+    await user.save();
 
     return { message: 'Email verified successfully' };
   }
 
-  // ─── FORGOT PASSWORD ──────────────────────────────────────────
-
-  async forgotPassword(dto: ForgotPasswordDto) {
-    const user = await this.userModel.findOne({ email: dto.email });
-    if (!user) {
-      // Don't reveal whether email exists
-      return { message: 'If the email exists, a reset link has been sent.' };
-    }
-
-    const resetToken = generateToken();
-    user.resetPasswordToken = resetToken;
-    user.resetPasswordExpiry = getExpiryDate(1); // 1 day
-    await user.save();
-
-    await this.emailService.sendPasswordResetEmail(user.email, resetToken);
-
-    return { message: 'If the email exists, a reset link has been sent.' };
-  }
-
-  // ─── RESET PASSWORD ───────────────────────────────────────────
-
-  async resetPassword(dto: ResetPasswordDto) {
-    const user = await this.userModel.findOne({
-      resetPasswordToken: dto.token,
-    });
-
-    if (!user || user.resetPasswordExpiry < new Date()) {
-      throw new BadRequestException('Invalid or expired reset token');
-    }
-
-    user.password = await bcrypt.hash(dto.newPassword, 12);
-    user.resetPasswordToken = null as any;
-    user.resetPasswordExpiry = null as any;
-    await user.save();
-
-    this.logger.log(`Password reset for: ${user.email}`);
-
-    return { message: 'Password reset successfully' };
-  }
-
-  // ─── CHANGE PASSWORD (AUTHENTICATED) ──────────────────────────
-
-  async changePassword(userId: string, dto: ChangePasswordDto) {
+  async changePassword(userId: string, currentPass: string, newPass: string) {
     const user = await this.userModel.findById(userId);
-    if (!user) {
-      throw new UnauthorizedException('User not found');
-    }
+    if (!user) throw new NotFoundException('User not found');
 
-    const isMatch = await bcrypt.compare(dto.oldPassword, user.password);
-    if (!isMatch) {
-      throw new BadRequestException('Old password is incorrect');
-    }
+    const valid = await bcrypt.compare(currentPass, user.password);
+    if (!valid) throw new UnauthorizedException('Current password incorrect');
 
-    user.password = await bcrypt.hash(dto.newPassword, 12);
+    user.password = await bcrypt.hash(newPass, 10);
     await user.save();
-
-    this.logger.log(`Password changed for: ${user.email}`);
 
     return { message: 'Password changed successfully' };
   }

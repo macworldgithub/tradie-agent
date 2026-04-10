@@ -51,13 +51,13 @@ export class User {
   emailVerified: boolean;
 
   @Prop()
-  emailVerificationToken: string;
+  emailVerificationToken?: string;
 
   @Prop()
-  resetPasswordToken: string;
+  resetPasswordToken?: string;
 
   @Prop()
-  resetPasswordExpiry: Date;
+  resetPasswordExpiry?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
