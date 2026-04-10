@@ -55,22 +55,22 @@ export class VoiceService {
         this.logger.log(`[${sessionId}] OpenAI Realtime WebSocket connected`);
 
         // CONFIGURE THE BRAIN:
-        // We tell OpenAI to listen to audio, but don't output audio (we use ElevenLabs for that)
+        // Output text only — ElevenLabs handles all voice synthesis.
+        // This prevents OpenAI from generating its own audio which caused
+        // echo loops (mic picking up speaker → false barge-ins).
         const sessionUpdate = {
           type: 'session.update',
           session: {
-            modalities: ['text', 'audio'], // Listen to user audio, respond with text
-            instructions: this.getSystemPrompt(), // THE "TRADIE" SCRIPT & RULES
-            voice: 'alloy', // Fallback voice (not used because we use ElevenLabs)
+            modalities: ['text'],  // Text output only — ElevenLabs is the voice
+            instructions: this.getSystemPrompt(),
             input_audio_format: 'pcm16',
-            output_audio_format: 'pcm16',
             turn_detection: {
-              type: 'server_vad', // Automated Voice Activity Detection
-              threshold: 0.8,     // 0.8 sensitivity prevents interruptions from noise
+              type: 'server_vad',
+              threshold: 0.8,
               prefix_padding_ms: 300,
-              silence_duration_ms: 2000, // Wait 2 seconds of silence before AI speaks
+              silence_duration_ms: 2000,
             },
-            tools: [this.getSaveBookingTool()], // Register the MongoDB tool
+            tools: [this.getSaveBookingTool()],
             tool_choice: 'auto',
           },
         };
@@ -106,7 +106,7 @@ export class VoiceService {
 
       ws.on('close', (code, reason) => {
         this.logger.log(`[${sessionId}] OpenAI WebSocket closed: ${code} - ${reason}`);
-        this.closeElevenLabsWs(sessionId); // Kill the voice too if brain closes
+        this.closeElevenLabsWs(sessionId);
         this.sessions.delete(sessionId);
         onEvent({ type: 'session-closed' });
       });
@@ -145,12 +145,22 @@ export class VoiceService {
   /**
    * STEP 4: The Voice (ElevenLabs Integration)
    * This opens a stream to ElevenLabs to convert OpenAI text into premium audio.
+   * Now only opens if there isn't already an active connection (reuse).
    */
   private openElevenLabsStream(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    this.closeElevenLabsWs(sessionId); // Clean up any old stream
+    // Reuse existing connection if it's already open or connecting
+    if (
+      session.elevenLabsWs &&
+      (session.elevenLabsWs.readyState === WebSocket.OPEN ||
+       session.elevenLabsWs.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
+    this.closeElevenLabsWs(sessionId); // Clean up any old/dead stream
 
     const apiKey = this.config.get<string>('ELEVENLABS_API_KEY');
     const voiceId = this.config.get<string>('ELEVENLABS_VOICE_ID');
@@ -190,7 +200,7 @@ export class VoiceService {
       } catch (err) {}
     });
 
-    // FIX: Handle errors so terminate() during CONNECTING state doesn't crash Node
+    // Handle errors so terminate() during CONNECTING state doesn't crash Node
     elWs.on('error', (err) => {
       this.logger.warn(`[${sessionId}] ElevenLabs WS error: ${err.message}`);
     });
@@ -227,12 +237,10 @@ export class VoiceService {
     if (session?.elevenLabsWs) {
       try {
         if (session.elevenLabsWs.readyState === WebSocket.CONNECTING) {
-          // Still handshaking — force-kill it safely instead of calling .close()
           session.elevenLabsWs.terminate();
         } else if (session.elevenLabsWs.readyState === WebSocket.OPEN) {
           session.elevenLabsWs.close();
         }
-        // If already CLOSING or CLOSED, do nothing — it's already shutting down
       } catch (err) {
         this.logger.warn(`[${sessionId}] Error closing ElevenLabs WS: ${err.message}`);
       }
@@ -245,6 +253,10 @@ export class VoiceService {
   /**
    * STEP 5: THE EVENT HUB (Handling Brain Activities)
    * This switch case reacts to everything OpenAI does.
+   * 
+   * CHANGED: Now listens for response.text.delta / response.text.done
+   * instead of response.audio_transcript.delta / response.audio_transcript.done
+   * because modalities is now ['text'] (no audio output from OpenAI).
    */
   private async handleRealtimeEvent(sessionId: string, event: any): Promise<void> {
     const session = this.sessions.get(sessionId);
@@ -255,30 +267,35 @@ export class VoiceService {
 
     switch (event.type) {
       case 'response.created':
-        // The AI is starting a new thought/response -> open the voice pipe!
+        // The AI is starting a new thought/response -> ensure voice pipe is open
         this.openElevenLabsStream(sessionId);
         break;
 
-      case 'response.audio_transcript.delta':
-        // OpenAI thought of a word -> send it to ElevenLabs for speaking!
+      case 'response.text.delta':
+        // OpenAI generated a word -> send it to ElevenLabs for speaking
         if (session.elevenLabsReady) {
           this.sendTextToElevenLabs(sessionId, event.delta);
         } else {
-          session.textBuffer.push(event.delta); // Wait for connection
+          session.textBuffer.push(event.delta);
         }
         // Also show the word on the screen in browser
         session.onEvent({ type: 'transcript-delta', delta: event.delta });
         break;
 
-      case 'response.audio_transcript.done':
+      case 'response.text.done':
         // OpenAI finished the sentence -> Finish speaking
         this.flushElevenLabsStream(sessionId);
-        session.onEvent({ type: 'transcript-done', transcript: event.transcript });
+        session.onEvent({ type: 'transcript-done', transcript: event.text });
         break;
 
       case 'input_audio_buffer.speech_started':
         // THE USER INTERRUPTED! Stop the AI from speaking immediately.
         this.logger.log(`[${sessionId}] USER INTERRUPTED -> Stopping AI Voice`);
+
+        // Tell OpenAI to stop generating its current response
+        session.ws.send(JSON.stringify({ type: 'response.cancel' }));
+
+        // Kill ElevenLabs so audio stops playing in the browser
         this.closeElevenLabsWs(sessionId);
         session.onEvent({ type: 'speech-started' });
         break;
