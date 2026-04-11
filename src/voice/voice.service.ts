@@ -10,10 +10,11 @@ import { Customer, CustomerDocument } from './Schema/customer.schema';
  * This includes the connection to OpenAI (Brain) and ElevenLabs (Voice).
  */
 interface RealtimeSession {
-  ws: WebSocket;                // Connection to OpenAI Realtime API
+  ws: WebSocket;                 // Connection to OpenAI Realtime API
   elevenLabsWs: WebSocket | null; // Connection to ElevenLabs TTS API
-  elevenLabsReady: boolean;      // Becomes true when ElevenLabs is ready to talk
-  textBuffer: string[];         // Holds text while ElevenLabs is still connecting
+  elevenLabsReady: boolean;       // Becomes true when ElevenLabs is ready to talk
+  textBuffer: string[];          // Holds text while ElevenLabs is still connecting
+  isResponseActive: boolean;     // Tracks if OpenAI is currently generating a response
   onEvent: (event: any) => void; // Function to send data back to the browser
 }
 
@@ -56,8 +57,6 @@ export class VoiceService {
 
         // CONFIGURE THE BRAIN:
         // Output text only — ElevenLabs handles all voice synthesis.
-        // This prevents OpenAI from generating its own audio which caused
-        // echo loops (mic picking up speaker → false barge-ins).
         const sessionUpdate = {
           type: 'session.update',
           session: {
@@ -78,7 +77,14 @@ export class VoiceService {
         ws.send(JSON.stringify(sessionUpdate));
 
         // Initializing the session state in our Map
-        this.sessions.set(sessionId, { ws, elevenLabsWs: null, elevenLabsReady: false, textBuffer: [], onEvent });
+        this.sessions.set(sessionId, {
+          ws,
+          elevenLabsWs: null,
+          elevenLabsReady: false,
+          textBuffer: [],
+          isResponseActive: false,
+          onEvent,
+        });
 
         // IMPORTANT: Pre-open ElevenLabs so it's ready before the AI starts its first word
         this.openElevenLabsStream(sessionId);
@@ -144,15 +150,18 @@ export class VoiceService {
 
   /**
    * STEP 4: The Voice (ElevenLabs Integration)
-   * This opens a stream to ElevenLabs to convert OpenAI text into premium audio.
-   * Now only opens if there isn't already an active connection (reuse).
+   * Opens a stream to ElevenLabs to convert OpenAI text into premium audio.
+   * 
+   * force=false (default): Reuse existing connection if alive.
+   * force=true: Always open a fresh connection (used for pre-warming after barge-in).
    */
-  private openElevenLabsStream(sessionId: string): void {
+  private openElevenLabsStream(sessionId: string, force = false): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    // Reuse existing connection if it's already open or connecting
+    // Reuse existing connection if it's healthy (unless forced)
     if (
+      !force &&
       session.elevenLabsWs &&
       (session.elevenLabsWs.readyState === WebSocket.OPEN ||
        session.elevenLabsWs.readyState === WebSocket.CONNECTING)
@@ -253,10 +262,6 @@ export class VoiceService {
   /**
    * STEP 5: THE EVENT HUB (Handling Brain Activities)
    * This switch case reacts to everything OpenAI does.
-   * 
-   * CHANGED: Now listens for response.text.delta / response.text.done
-   * instead of response.audio_transcript.delta / response.audio_transcript.done
-   * because modalities is now ['text'] (no audio output from OpenAI).
    */
   private async handleRealtimeEvent(sessionId: string, event: any): Promise<void> {
     const session = this.sessions.get(sessionId);
@@ -267,8 +272,15 @@ export class VoiceService {
 
     switch (event.type) {
       case 'response.created':
-        // The AI is starting a new thought/response -> ensure voice pipe is open
+        // The AI is starting a new thought/response
+        session.isResponseActive = true;
+        // Ensure voice pipe is open (reuses if already connected from pre-warm)
         this.openElevenLabsStream(sessionId);
+        break;
+
+      case 'response.done':
+        // The AI finished its response
+        session.isResponseActive = false;
         break;
 
       case 'response.text.delta':
@@ -292,11 +304,19 @@ export class VoiceService {
         // THE USER INTERRUPTED! Stop the AI from speaking immediately.
         this.logger.log(`[${sessionId}] USER INTERRUPTED -> Stopping AI Voice`);
 
-        // Tell OpenAI to stop generating its current response
-        session.ws.send(JSON.stringify({ type: 'response.cancel' }));
+        // Only cancel if OpenAI is actually generating a response
+        if (session.isResponseActive) {
+          session.ws.send(JSON.stringify({ type: 'response.cancel' }));
+        }
 
         // Kill ElevenLabs so audio stops playing in the browser
         this.closeElevenLabsWs(sessionId);
+
+        // PRE-WARM: Immediately open a fresh ElevenLabs connection.
+        // The TLS handshake (~500ms) happens while the user is still speaking.
+        // By the time OpenAI responds, ElevenLabs is already connected and ready.
+        this.openElevenLabsStream(sessionId, true);
+
         session.onEvent({ type: 'speech-started' });
         break;
 
