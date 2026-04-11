@@ -60,7 +60,7 @@ export class VoiceService {
         const sessionUpdate = {
           type: 'session.update',
           session: {
-            modalities: ['text'],  // Text output only — ElevenLabs is the voice
+            modalities: ['text'],
             instructions: this.getSystemPrompt(),
             input_audio_format: 'pcm16',
             turn_detection: {
@@ -89,7 +89,6 @@ export class VoiceService {
         // IMPORTANT: Pre-open ElevenLabs so it's ready before the AI starts its first word
         this.openElevenLabsStream(sessionId);
         
-        // Finalize setup
         resolve();
       });
 
@@ -103,7 +102,6 @@ export class VoiceService {
         }
       });
 
-      // Error and close handlers
       ws.on('error', (err) => {
         this.logger.error(`[${sessionId}] OpenAI WebSocket error:`, err);
         onEvent({ type: 'error', error: { message: err.message } });
@@ -121,7 +119,6 @@ export class VoiceService {
 
   /**
    * STEP 2: Relay User Audio to OpenAI
-   * The browser sends raw mic audio; we push it straight to OpenAI.
    */
   sendAudio(sessionId: string, base64Audio: string): void {
     const session = this.sessions.get(sessionId);
@@ -135,7 +132,6 @@ export class VoiceService {
 
   /**
    * STEP 3: The Greeting Logic
-   * We wait 3 seconds to ensure all WebSockets are stable, then tell AI to "Start Speaking."
    */
   triggerGreeting(sessionId: string): void {
     const session = this.sessions.get(sessionId);
@@ -150,10 +146,13 @@ export class VoiceService {
 
   /**
    * STEP 4: The Voice (ElevenLabs Integration)
-   * Opens a stream to ElevenLabs to convert OpenAI text into premium audio.
    * 
-   * force=false (default): Reuse existing connection if alive.
-   * force=true: Always open a fresh connection (used for pre-warming after barge-in).
+   * KEY BEHAVIOR: ElevenLabs stream-input WebSocket is single-use.
+   * Once you flush (send empty text), ElevenLabs finishes and closes.
+   * So each AI response needs its own connection.
+   * 
+   * Reuse logic: only reuse if a connection is alive AND hasn't been flushed.
+   * force=true: always open fresh (used after barge-in pre-warm).
    */
   private openElevenLabsStream(sessionId: string, force = false): void {
     const session = this.sessions.get(sessionId);
@@ -169,7 +168,8 @@ export class VoiceService {
       return;
     }
 
-    this.closeElevenLabsWs(sessionId); // Clean up any old/dead stream
+    // Clean up any old/dead stream without triggering race conditions
+    this.closeElevenLabsWs(sessionId);
 
     const apiKey = this.config.get<string>('ELEVENLABS_API_KEY');
     const voiceId = this.config.get<string>('ELEVENLABS_VOICE_ID');
@@ -180,7 +180,6 @@ export class VoiceService {
     elWs.on('open', () => {
       this.logger.log(`[${sessionId}] ElevenLabs WebSocket connected`);
       
-      // Configuration message for ElevenLabs
       elWs.send(JSON.stringify({
         text: ' ',
         voice_settings: { 
@@ -191,35 +190,45 @@ export class VoiceService {
         xi_api_key: apiKey,
       }));
 
-      // Flush any text that was sent to us while we were connecting
-      session.elevenLabsReady = true;
-      for (const text of session.textBuffer) {
-        this.sendTextToElevenLabs(sessionId, text);
+      // Only set ready if THIS connection is still the active one
+      // (prevents race condition if a newer connection replaced us)
+      if (session.elevenLabsWs === elWs) {
+        session.elevenLabsReady = true;
+        for (const text of session.textBuffer) {
+          this.sendTextToElevenLabs(sessionId, text);
+        }
+        session.textBuffer = [];
       }
-      session.textBuffer = [];
     });
 
     elWs.on('message', (data: WebSocket.Data) => {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.audio) {
-          // ELEVENLABS AUDIO CHUNK -> Forward to Browser for playback!
           session.onEvent({ type: 'audio-delta', delta: msg.audio });
         }
       } catch (err) {}
     });
 
-    // Handle errors so terminate() during CONNECTING state doesn't crash Node
     elWs.on('error', (err) => {
       this.logger.warn(`[${sessionId}] ElevenLabs WS error: ${err.message}`);
     });
 
-    elWs.on('close', () => { session.elevenLabsReady = false; });
+    // FIX: Only update state if THIS WebSocket is still the current one.
+    // Without this guard, an old connection's close event fires AFTER a new
+    // connection has already opened, setting elevenLabsReady=false incorrectly.
+    // This was the root cause of "no voice after first response".
+    elWs.on('close', () => {
+      if (session.elevenLabsWs === elWs) {
+        session.elevenLabsReady = false;
+      }
+    });
+
     session.elevenLabsWs = elWs;
   }
 
   /**
-   * Sends a text chunk to the ElevenLabs mouth to generate voice.
+   * Sends a text chunk to ElevenLabs for voice generation.
    */
   private sendTextToElevenLabs(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
@@ -230,6 +239,7 @@ export class VoiceService {
 
   /**
    * Signals ElevenLabs that the sentence is finished.
+   * NOTE: This causes ElevenLabs to close the connection after final audio.
    */
   private flushElevenLabsStream(sessionId: string): void {
     const session = this.sessions.get(sessionId);
@@ -260,73 +270,65 @@ export class VoiceService {
   }
 
   /**
-   * STEP 5: THE EVENT HUB (Handling Brain Activities)
-   * This switch case reacts to everything OpenAI does.
+   * STEP 5: THE EVENT HUB
    */
   private async handleRealtimeEvent(sessionId: string, event: any): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    // Diagnostic logs (remove in production if too noisy)
     this.logger.debug(`[${sessionId}] OpenAI Debug Event: ${event.type}`);
 
     switch (event.type) {
       case 'response.created':
-        // The AI is starting a new thought/response
         session.isResponseActive = true;
-        // Ensure voice pipe is open (reuses if already connected from pre-warm)
+        // Each AI response needs a fresh ElevenLabs connection because
+        // flush (empty text) closes the previous one.
+        // If a pre-warmed connection from barge-in is alive, this reuses it.
+        // If not (e.g. first greeting, or flush killed the old one), opens new.
         this.openElevenLabsStream(sessionId);
         break;
 
       case 'response.done':
-        // The AI finished its response
         session.isResponseActive = false;
         break;
 
       case 'response.text.delta':
-        // OpenAI generated a word -> send it to ElevenLabs for speaking
         if (session.elevenLabsReady) {
           this.sendTextToElevenLabs(sessionId, event.delta);
         } else {
           session.textBuffer.push(event.delta);
         }
-        // Also show the word on the screen in browser
         session.onEvent({ type: 'transcript-delta', delta: event.delta });
         break;
 
       case 'response.text.done':
-        // OpenAI finished the sentence -> Finish speaking
         this.flushElevenLabsStream(sessionId);
         session.onEvent({ type: 'transcript-done', transcript: event.text });
         break;
 
       case 'input_audio_buffer.speech_started':
-        // THE USER INTERRUPTED! Stop the AI from speaking immediately.
         this.logger.log(`[${sessionId}] USER INTERRUPTED -> Stopping AI Voice`);
 
-        // Only cancel if OpenAI is actually generating a response
+        // Only cancel if OpenAI is actively generating
         if (session.isResponseActive) {
           session.ws.send(JSON.stringify({ type: 'response.cancel' }));
         }
 
-        // Kill ElevenLabs so audio stops playing in the browser
+        // Kill current ElevenLabs audio immediately
         this.closeElevenLabsWs(sessionId);
 
-        // PRE-WARM: Immediately open a fresh ElevenLabs connection.
-        // The TLS handshake (~500ms) happens while the user is still speaking.
-        // By the time OpenAI responds, ElevenLabs is already connected and ready.
+        // PRE-WARM: Start the TLS handshake NOW while user is still speaking.
+        // By the time OpenAI generates its next response, ElevenLabs is ready.
         this.openElevenLabsStream(sessionId, true);
 
         session.onEvent({ type: 'speech-started' });
         break;
 
       case 'conversation.item.input_audio_transcription.completed':
-        // What the user said (text) -> Send to browser UI
         session.onEvent({ type: 'user-transcript', transcript: event.transcript });
         break;
 
       case 'response.function_call_arguments.done':
-        // ALL 7 QUESTIONS ANSWERED -> Call the Database tool
         await this.handleFunctionCall(sessionId, event);
         break;
 
@@ -338,7 +340,6 @@ export class VoiceService {
 
   /**
    * STEP 6: DATA PERSISTENCE (Saving to MongoDB)
-   * A call to this happens automatically when the AI collects all 7 pieces of data.
    */
   private async handleFunctionCall(sessionId: string, event: any): Promise<void> {
     const session = this.sessions.get(sessionId);
@@ -349,7 +350,6 @@ export class VoiceService {
         const args = JSON.parse(event.arguments);
         this.logger.log(`[${sessionId}] Saving Booking to MongoDB for: ${args.name}`);
 
-        // Write to your database!
         const customer = await this.customerModel.create({
           name: args.name,
           phone: args.phone,
@@ -363,7 +363,6 @@ export class VoiceService {
 
         this.logger.log(`[${sessionId}] SUCCESS: Customer saved with ID ${customer._id}`);
 
-        // Tell OpenAI the database save worked!
         session.ws.send(JSON.stringify({
           type: 'conversation.item.create',
           item: {
@@ -373,10 +372,7 @@ export class VoiceService {
           },
         }));
 
-        // Ask OpenAI to say the "Final Goodbye" message
         session.ws.send(JSON.stringify({ type: 'response.create' }));
-
-        // Notify UI
         session.onEvent({ type: 'booking-saved', data: args });
 
       } catch (err) {
@@ -387,7 +383,6 @@ export class VoiceService {
 
   /**
    * THE AI SCRIPT (System Prompt)
-   * This is where you define the personality and the 7 questions.
    */
   private getSystemPrompt(): string {
     return `### IDENTITY ###
@@ -432,7 +427,6 @@ You MUST ask these questions exactly in this order. NEVER skip a step.
 
   /**
    * TOOL DEFINITION
-   * This is how OpenAI knows what fields to fill for the database save.
    */
   private getSaveBookingTool() {
     return {
