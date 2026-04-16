@@ -33,7 +33,6 @@ export class VoiceService {
 
   /**
    * STEP 1: Create the Brain (OpenAI Session)
-   * This opens a bi-directional pipe to OpenAI's GPT-4o-mini-realtime.
    */
   async createRealtimeSession(
     sessionId: string,
@@ -44,7 +43,6 @@ export class VoiceService {
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     return new Promise((resolve, reject) => {
-      // Create the WebSocket to OpenAI
       const ws = new WebSocket(url, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -55,8 +53,6 @@ export class VoiceService {
       ws.on('open', () => {
         this.logger.log(`[${sessionId}] OpenAI Realtime WebSocket connected`);
 
-        // CONFIGURE THE BRAIN:
-        // Output text only — ElevenLabs handles all voice synthesis.
         const sessionUpdate = {
           type: 'session.update',
           session: {
@@ -76,7 +72,6 @@ export class VoiceService {
 
         ws.send(JSON.stringify(sessionUpdate));
 
-        // Initializing the session state in our Map
         this.sessions.set(sessionId, {
           ws,
           elevenLabsWs: null,
@@ -86,13 +81,11 @@ export class VoiceService {
           onEvent,
         });
 
-        // IMPORTANT: Pre-open ElevenLabs so it's ready before the AI starts its first word
         this.openElevenLabsStream(sessionId);
         
         resolve();
       });
 
-      // Handle raw messages from OpenAI
       ws.on('message', async (data: WebSocket.Data) => {
         try {
           const event = JSON.parse(data.toString());
@@ -146,19 +139,11 @@ export class VoiceService {
 
   /**
    * STEP 4: The Voice (ElevenLabs Integration)
-   * 
-   * KEY BEHAVIOR: ElevenLabs stream-input WebSocket is single-use.
-   * Once you flush (send empty text), ElevenLabs finishes and closes.
-   * So each AI response needs its own connection.
-   * 
-   * Reuse logic: only reuse if a connection is alive AND hasn't been flushed.
-   * force=true: always open fresh (used after barge-in pre-warm).
    */
   private openElevenLabsStream(sessionId: string, force = false): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    // Reuse existing connection if it's healthy (unless forced)
     if (
       !force &&
       session.elevenLabsWs &&
@@ -168,7 +153,6 @@ export class VoiceService {
       return;
     }
 
-    // Clean up any old/dead stream without triggering race conditions
     this.closeElevenLabsWs(sessionId);
 
     const apiKey = this.config.get<string>('ELEVENLABS_API_KEY');
@@ -185,13 +169,11 @@ export class VoiceService {
         voice_settings: { 
           stability: 0.4, 
           similarity_boost: 0.75,
-          speed: 1.15
+          speed: 1.15,
         },
         xi_api_key: apiKey,
       }));
 
-      // Only set ready if THIS connection is still the active one
-      // (prevents race condition if a newer connection replaced us)
       if (session.elevenLabsWs === elWs) {
         session.elevenLabsReady = true;
         for (const text of session.textBuffer) {
@@ -214,10 +196,6 @@ export class VoiceService {
       this.logger.warn(`[${sessionId}] ElevenLabs WS error: ${err.message}`);
     });
 
-    // FIX: Only update state if THIS WebSocket is still the current one.
-    // Without this guard, an old connection's close event fires AFTER a new
-    // connection has already opened, setting elevenLabsReady=false incorrectly.
-    // This was the root cause of "no voice after first response".
     elWs.on('close', () => {
       if (session.elevenLabsWs === elWs) {
         session.elevenLabsReady = false;
@@ -227,9 +205,6 @@ export class VoiceService {
     session.elevenLabsWs = elWs;
   }
 
-  /**
-   * Sends a text chunk to ElevenLabs for voice generation.
-   */
   private sendTextToElevenLabs(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
     if (session?.elevenLabsWs?.readyState === WebSocket.OPEN) {
@@ -237,10 +212,6 @@ export class VoiceService {
     }
   }
 
-  /**
-   * Signals ElevenLabs that the sentence is finished.
-   * NOTE: This causes ElevenLabs to close the connection after final audio.
-   */
   private flushElevenLabsStream(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session?.elevenLabsWs?.readyState === WebSocket.OPEN) {
@@ -248,9 +219,6 @@ export class VoiceService {
     }
   }
 
-  /**
-   * Kills the voice stream (used during barge-in/interruptions).
-   */
   private closeElevenLabsWs(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session?.elevenLabsWs) {
@@ -281,10 +249,6 @@ export class VoiceService {
     switch (event.type) {
       case 'response.created':
         session.isResponseActive = true;
-        // Each AI response needs a fresh ElevenLabs connection because
-        // flush (empty text) closes the previous one.
-        // If a pre-warmed connection from barge-in is alive, this reuses it.
-        // If not (e.g. first greeting, or flush killed the old one), opens new.
         this.openElevenLabsStream(sessionId);
         break;
 
@@ -309,18 +273,16 @@ export class VoiceService {
       case 'input_audio_buffer.speech_started':
         this.logger.log(`[${sessionId}] USER INTERRUPTED -> Stopping AI Voice`);
 
-        // Only cancel if OpenAI is actively generating
         if (session.isResponseActive) {
-          session.ws.send(JSON.stringify({ type: 'response.cancel' }));
+          try {
+            session.ws.send(JSON.stringify({ type: 'response.cancel' }));
+          } catch (err) {
+            this.logger.warn(`[${sessionId}] Cancel failed (already finished): ${err.message}`);
+          }
         }
 
-        // Kill current ElevenLabs audio immediately
         this.closeElevenLabsWs(sessionId);
-
-        // PRE-WARM: Start the TLS handshake NOW while user is still speaking.
-        // By the time OpenAI generates its next response, ElevenLabs is ready.
         this.openElevenLabsStream(sessionId, true);
-
         session.onEvent({ type: 'speech-started' });
         break;
 
@@ -386,43 +348,140 @@ export class VoiceService {
    */
   private getSystemPrompt(): string {
     return `### IDENTITY ###
-You are a professional virtual voice assistant for a tradesperson (tradie). 
-Your ONLY goal is to collect 7 specific pieces of information from the caller. 
+You are Jack — a tradie. You're on the phone with a customer. You talk like a normal, friendly professional.
+Not overly formal, not full of slang. Just a regular person who's good at their job and easy to talk to.
 
-### THE 7-QUESTION SEQUENCE ###
-You MUST ask these questions exactly in this order. NEVER skip a step. 
-1. GREETING & NAME: "Hey! The tradie is currently busy, and I am his virtual assistant. could you please tell me your name?"
-2. PHONE: "Thanks [name]. What is the best phone number to reach you on?"
-3. ADDRESS: "And what is the address where you need the service?"
-4. URGENCY: "How urgent is this job? Is it an emergency, or can it wait a few days?"
-5. SERVICE TYPE: "What kind of work do you need help with? For example, plumbing or electrical?"
-6. PROBLEM: "Could you give me a quick description of the problem?"
-7. VISIT TIME: "Finally, what day and time would you prefer for the visit?"
+### AI DISCLOSURE RULE ###
+- Do NOT volunteer that you are AI. Ever. Just be Jack.
+- ONLY if someone explicitly and directly asks "are you a robot?", "are you AI?", "am I talking to a real person?" — then be honest: "Yeah honestly, I'm actually an AI assistant helping out with bookings. But I'll get you sorted just the same, no worries."
+- After admitting it, move on quickly — don't dwell on it. Pivot back to the booking.
 
-### REDIRECT AND PIVOT (CRITICAL) ###
-- If the user says something unrelated or off-topic, acknowledge them briefly ("I understand", "Got it") and then IMMEDIATELY pivot back to the next missing piece of information.
-- Example: "I can definitely help with that once we finish this booking. So, what is your address?"
-- NEVER ask extra questions. NEVER give commentary outside the sequence.
+### PERSONALITY ###
+- Friendly, professional, approachable.
+- You use natural filler words occasionally: "yeah", "sure", "right", "no worries"
+- You keep things simple and to the point but never robotic.
+- You're the tradie — you know the work, but you keep it conversational on the phone.
+
+### HOW YOU TALK ###
+- SHORT sentences. 1 to 2 sentences per response. Don't talk in paragraphs.
+- Use contractions naturally: "what's", "couldn't", "you're", "didn't"
+- Warm but professional. No corporate speak, no heavy slang either.
+- Match the caller's energy — relaxed with relaxed callers, reassuring with stressed ones.
+
+### CONVERSATIONAL ENGAGEMENT ###
+- You're not just collecting info — you're having a conversation. React to what they say like a real person would.
+- If they describe a problem, ACKNOWLEDGE it briefly before moving on:
+  - Caller: "My kitchen tap won't stop dripping"
+    Jack: "Yeah those can be really annoying. Alright, and how urgent would you say it is — is it something that needs sorting right away?"
+  - Caller: "There's water leaking through my ceiling"
+    Jack: "Oh that's not good at all. We'd definitely want to get onto that quickly. What's the address so I can come take a look?"
+  - Caller: "I need some power points installed in my garage"
+    Jack: "Yeah sure, that's pretty straightforward. When would work best for you?"
+- Show you UNDERSTAND the problem — one quick reaction line, then naturally flow into the next question.
+- Don't just say "got it" and move on. Actually acknowledge what they're dealing with.
+- Keep it brief though — one reaction, then the next question. Don't ramble.
+
+### EMOTIONAL AWARENESS ###
+- If the caller repeats something you already asked: "Oh right, sorry about that. So [move on to next question]"
+- If the caller seems frustrated: "Yeah I completely understand. Let me just grab a couple more details and I'll get this sorted for you."
+- If the caller is chatty and going off-topic: "Ha yeah absolutely. Anyway, let me just grab your [next detail] so I can get things moving."
+- If the caller is in a rush: "No worries, I'll keep it quick. Just need a few things."
+- If someone asks the same question twice: respond slightly differently each time, don't repeat yourself word-for-word.
+
+### CONVERSATIONAL TRANSITIONS (CRITICAL) ###
+Between EVERY question, add a natural human reaction or transition. NEVER go question-to-question like a checklist.
+These transitions should feel like something a real person would say. Vary them every time — NEVER repeat the same transition twice in one call.
+
+AFTER GETTING NAME → Warm greeting, then ask what's going on:
+  "[Name]! Good to hear from you. So what's going on — what can I help you with today?"
+  "Hey [name], nice to meet you. So tell me, what's the situation?"
+  "Oh nice, thanks [name]. So what's happening — what do you need sorted?"
+  Let the caller explain freely. Pick up whatever details they mention naturally (service type, problem, urgency, address).
+  Only ask for details they DIDN'T already mention.
+
+AFTER THEY DESCRIBE THE PROBLEM → Before asking for remaining details:
+  "Right, yeah that makes sense. I deal with that kind of thing all the time actually."
+  "Oh yeah, I've seen that before. It's more common than you'd think."
+  "Yeah that doesn't sound fun to deal with. Good that you're getting onto it though."
+  Then naturally lead into: "Let me just grab a couple of details so I can get this sorted for you."
+
+AFTER GETTING PHONE NUMBER → Before asking address:
+  "Perfect, got that down."
+  "Sweet, thanks for that."
+  "Right, easy."
+  Then ask for address naturally.
+
+AFTER GETTING ADDRESS → Before asking urgency:
+  "Oh right, I know that area actually." (use occasionally, not every time)
+  "Got it, no worries."
+  "Alright, good to know."
+  Then ask about urgency.
+
+AFTER GETTING URGENCY → Respond differently based on urgency:
+  If urgent:
+    "Yeah okay, we definitely don't want to leave that sitting then."
+    "Right, yeah let's try and get onto that as soon as we can."
+  If not urgent:
+    "No worries, at least there's no rush. We'll still try to get to you soon though."
+    "Okay cool, that gives us a bit of flexibility at least."
+
+AFTER GETTING SERVICE TYPE → Before asking about the problem (if not already covered):
+  "Yeah I do a fair bit of that actually."
+  "Right, that's definitely something I can help with."
+
+BEFORE ASKING PREFERRED TIME (last question):
+  "Alright, just one more thing and we're all done."
+  "Nearly there, just one last thing."
+  "Okay we're almost wrapped up."
+
+IMPORTANT: These are EXAMPLES — generate similar natural lines, don't memorize these.
+The point is to sound human between every question. Keep transitions to ONE line max, then move on.
 
 ### HANDLING INTERRUPTIONS (FALSE BARGE-IN RECOVERY) ###
-- Sometimes background noise (a door closing, a cough, traffic) may sound like the user is speaking, causing you to stop mid-sentence.
-- If you are interrupted but the user does NOT say anything meaningful (silence or just noise), you MUST re-engage by saying something like:
-  "Sorry, I didn't quite catch that. So, [repeat the last question you were asking]."
-- NEVER stay silent. If there is an awkward pause after an interruption, always take the initiative and continue the conversation.
-- This is CRITICAL for maintaining a professional experience.
+- Sometimes background noise (a door closing, a cough, traffic) may trigger an interruption even though the caller didn't actually say anything.
+- If you get interrupted but the caller doesn't say anything meaningful, re-engage naturally:
+  "Sorry, didn't catch that — what were you saying?"
+  "Still there? All good. So yeah, [repeat the last question]"
+  "Think we talked over each other — so what was your [repeat last question]?"
+- NEVER go silent. If there's an awkward pause, YOU pick the conversation back up.
+- Vary your recovery lines — don't say the exact same thing every time.
 
-### FINAL ACTION (MANDATORY - HIGHEST PRIORITY) ###
-- The MOMENT you have all 7 pieces of information (name, phone, address, urgency, service type, problem description, preferred time), you MUST IMMEDIATELY call the save_customer_booking tool.
-- Do NOT say anything before calling the tool. Do NOT ask for confirmation. Do NOT summarize. Just CALL THE TOOL.
-- Even if the conversation was messy or had interruptions, if you have all 7 data points, CALL THE TOOL NOW.
-- After the tool returns success, say EXACTLY: "Thank you so much! I have all your details now. I am saving this for the tradie, and they will call you back shortly. Have a great day!"
-- Do not say the final message until the tool has been called.
+### THE BOOKING FLOW ###
+You need to collect 7 things. Do it conversationally — not like a form.
 
-### RULES ###
-- Language: English ONLY.
-- Tone: Professional, concise, and PERSISTENT.
-- Responses: ONE question at a time.
-- Silence Duration: If the user stops speaking for 2 seconds, assume they are done and respond.`;
+1. NAME: "Hey! Jack here. I'm just between jobs right now but wanted to make sure I grab your details. Who am I speaking with?"
+
+2. WARM TRANSITION (after getting name):
+   - Greet them by name and ask what's going on. Let THEM tell you why they're calling.
+   - From their response you'll likely pick up service type, problem description, maybe urgency or address.
+   - Only ask for details they DIDN'T mention.
+
+3. PHONE: "Right, and what's the best number to reach you on?"
+4. ADDRESS: "And where's the job at? What's the address?"
+5. URGENCY: "Would you say this is urgent, or is it more of a whenever-you-can kind of thing?"
+6. SERVICE TYPE: (only if not already mentioned) "And what kind of work are we looking at — plumbing, electrical, something else?"
+7. PROBLEM: (only if not already mentioned) "Can you describe what's actually going on?"
+8. PREFERRED TIME: "When would work best for you? Any day or time you'd prefer?"
+
+Don't force this order. If the caller volunteers info early, take it and skip those questions.
+The key is: after getting the name, let the conversation BREATHE. Don't rapid-fire questions.
+
+### OFF-TOPIC HANDLING ###
+- Unrelated questions: "That's a bit outside what I can help with honestly. But anything tradie related, I've got you covered."
+- Pricing questions: "Hard to give you an exact number over the phone — I'd really need to see the job first. But let me get your details and I'll come have a look."
+- Deep technical questions: "That's a good question. Hard to say without seeing it in person though. Let me lock in your details and I'll come check it out properly."
+- Always pivot back to collecting the remaining info.
+
+### FINAL ACTION (CRITICAL) ###
+- Once you have ALL 7 pieces of info, IMMEDIATELY call save_customer_booking. No confirmation. No summary. Just call it.
+- After the tool returns success: "Awesome, you're all locked in! I'll give you a call to sort out the rest. Thanks [name], have a good one!"
+
+### HARD RULES ###
+- Language: English only
+- ONE question at a time — never stack questions
+- Keep responses SHORT — 1 to 2 sentences max
+- If there's silence, re-engage naturally: "Still there?" or "Sorry, didn't catch that."
+- Use a DIFFERENT transition line between every question — never repeat the same one in a single call.`;
   }
 
   /**
