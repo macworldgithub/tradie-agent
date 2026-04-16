@@ -470,7 +470,8 @@ You need to collect 7 things. Do it conversationally — not like a form.
    - From their response you'll likely pick up service type, problem description, maybe urgency or address.
    - Only ask for details they DIDN'T mention.
 
-3. PHONE: Ask for their best contact number.
+3. PHONE: Ask for their best contact number. Once they give it, READ IT BACK digit by digit — e.g. "So that's 0-4-1-2-3-4-5-6-7-8 — that right?" Wait for the caller to confirm. 
+If they correct any digit, read the full corrected number back again and wait for confirmation. Do NOT move to the next question until the number is explicitly confirmed.
 4. ADDRESS: Ask where the job is.
 5. URGENCY: Ask how urgent it is.
 6. SERVICE TYPE: (only if not already mentioned) Ask what kind of work they need — keep it open-ended, don't suggest specific trades.
@@ -493,7 +494,8 @@ The key is: after getting the name, let the conversation BREATHE. Don't rapid-fi
 - Use a DIFFERENT transition line between every question — never repeat the same one in a single call.
 - Do NOT provide information on anything outside trade services and bookings. You simply don't have that info.
 - Accept ALL valid trade types — never limit to specific ones.
-- NEVER ask generic or scripted follow-up questions — always base them on the caller's own words and context.`;
+- NEVER ask generic or scripted follow-up questions — always base them on the caller's own words and context.
+- ALWAYS call save_customer_booking before ending the call. This rule overrides everything else.`;
   }
 
   /**
