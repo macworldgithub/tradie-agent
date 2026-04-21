@@ -10,18 +10,24 @@ import { Customer, CustomerDocument } from './Schema/customer.schema';
  * This includes the connection to OpenAI (Brain) and ElevenLabs (Voice).
  */
 interface RealtimeSession {
-  ws: WebSocket;                 // Connection to OpenAI Realtime API
+  ws: WebSocket; // Connection to OpenAI Realtime API
   elevenLabsWs: WebSocket | null; // Connection to ElevenLabs TTS API
-  elevenLabsReady: boolean;       // Becomes true when ElevenLabs is ready to talk
-  textBuffer: string[];          // Holds text while ElevenLabs is still connecting
-  isResponseActive: boolean;     // Tracks if OpenAI is currently generating a response
+  elevenLabsReady: boolean; // Becomes true when ElevenLabs is ready to talk
+  textBuffer: string[]; // Holds text while ElevenLabs is still connecting
+  isResponseActive: boolean; // Tracks if OpenAI is currently generating a response
   onEvent: (event: any) => void; // Function to send data back to the browser
+  sessionStartedAtMs: number;
+  openAiConnectedAtMs: number | null;
+  elevenLabsConnectedAtMs: number | null;
+  greetingTriggeredAtMs: number | null;
+  firstResponseCreatedAtMs: number | null;
+  firstAudioDeltaLogged: boolean;
 }
 
 @Injectable()
 export class VoiceService {
   private readonly logger = new Logger(VoiceService.name);
-  
+
   // This map keeps track of all active calls using the sessionId (Socket ID)
   private sessions = new Map<string, RealtimeSession>();
 
@@ -41,6 +47,7 @@ export class VoiceService {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     const model = 'gpt-4o-mini-realtime-preview';
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
+    const sessionStartedAtMs = Date.now();
 
     return new Promise((resolve, reject) => {
       const ws = new WebSocket(url, {
@@ -51,7 +58,11 @@ export class VoiceService {
       });
 
       ws.on('open', () => {
+        const openAiConnectedAtMs = Date.now();
         this.logger.log(`[${sessionId}] OpenAI Realtime WebSocket connected`);
+        this.logger.log(
+          `[${sessionId}] Timing: OpenAI WS connected in ${openAiConnectedAtMs - sessionStartedAtMs}ms`,
+        );
 
         const sessionUpdate = {
           type: 'session.update',
@@ -79,10 +90,16 @@ export class VoiceService {
           textBuffer: [],
           isResponseActive: false,
           onEvent,
+          sessionStartedAtMs,
+          openAiConnectedAtMs,
+          elevenLabsConnectedAtMs: null,
+          greetingTriggeredAtMs: null,
+          firstResponseCreatedAtMs: null,
+          firstAudioDeltaLogged: false,
         });
 
         this.openElevenLabsStream(sessionId);
-        
+
         resolve();
       });
 
@@ -102,7 +119,9 @@ export class VoiceService {
       });
 
       ws.on('close', (code, reason) => {
-        this.logger.log(`[${sessionId}] OpenAI WebSocket closed: ${code} - ${reason}`);
+        this.logger.log(
+          `[${sessionId}] OpenAI WebSocket closed: ${code} - ${reason}`,
+        );
         this.closeElevenLabsWs(sessionId);
         this.sessions.delete(sessionId);
         onEvent({ type: 'session-closed' });
@@ -117,10 +136,12 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    session.ws.send(JSON.stringify({
-      type: 'input_audio_buffer.append',
-      audio: base64Audio,
-    }));
+    session.ws.send(
+      JSON.stringify({
+        type: 'input_audio_buffer.append',
+        audio: base64Audio,
+      }),
+    );
   }
 
   /**
@@ -130,11 +151,11 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    setTimeout(() => {
-      const s = this.sessions.get(sessionId);
-      if (!s) return;
-      s.ws.send(JSON.stringify({ type: 'response.create' }));
-    }, 3000);
+    session.greetingTriggeredAtMs = Date.now();
+    this.logger.log(
+      `[${sessionId}] Timing: greeting trigger fired at ${session.greetingTriggeredAtMs - session.sessionStartedAtMs}ms from session start`,
+    );
+    session.ws.send(JSON.stringify({ type: 'response.create' }));
   }
 
   /**
@@ -148,7 +169,7 @@ export class VoiceService {
       !force &&
       session.elevenLabsWs &&
       (session.elevenLabsWs.readyState === WebSocket.OPEN ||
-       session.elevenLabsWs.readyState === WebSocket.CONNECTING)
+        session.elevenLabsWs.readyState === WebSocket.CONNECTING)
     ) {
       return;
     }
@@ -163,16 +184,22 @@ export class VoiceService {
 
     elWs.on('open', () => {
       this.logger.log(`[${sessionId}] ElevenLabs WebSocket connected`);
-      
-      elWs.send(JSON.stringify({
-        text: ' ',
-        voice_settings: { 
-          stability: 0.4, 
-          similarity_boost: 0.75,
-          speed: 1.15,
-        },
-        xi_api_key: apiKey,
-      }));
+      session.elevenLabsConnectedAtMs = Date.now();
+      this.logger.log(
+        `[${sessionId}] Timing: ElevenLabs WS connected in ${session.elevenLabsConnectedAtMs - session.sessionStartedAtMs}ms`,
+      );
+
+      elWs.send(
+        JSON.stringify({
+          text: ' ',
+          voice_settings: {
+            stability: 0.4,
+            similarity_boost: 0.75,
+            speed: 1.15,
+          },
+          xi_api_key: apiKey,
+        }),
+      );
 
       if (session.elevenLabsWs === elWs) {
         session.elevenLabsReady = true;
@@ -187,6 +214,32 @@ export class VoiceService {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.audio) {
+          if (!session.firstAudioDeltaLogged) {
+            const firstAudioAtMs = Date.now();
+            session.firstAudioDeltaLogged = true;
+            const openAiMs = session.openAiConnectedAtMs
+              ? session.openAiConnectedAtMs - session.sessionStartedAtMs
+              : -1;
+            const elevenLabsMs = session.elevenLabsConnectedAtMs
+              ? session.elevenLabsConnectedAtMs - session.sessionStartedAtMs
+              : -1;
+            const greetingMs = session.greetingTriggeredAtMs
+              ? session.greetingTriggeredAtMs - session.sessionStartedAtMs
+              : -1;
+            const responseCreatedAfterGreetingMs =
+              session.firstResponseCreatedAtMs && session.greetingTriggeredAtMs
+                ? session.firstResponseCreatedAtMs -
+                  session.greetingTriggeredAtMs
+                : -1;
+            const firstAudioAfterResponseCreatedMs =
+              session.firstResponseCreatedAtMs
+                ? firstAudioAtMs - session.firstResponseCreatedAtMs
+                : -1;
+
+            this.logger.log(
+              `[${sessionId}] Timing: first audio delta at ${firstAudioAtMs - session.sessionStartedAtMs}ms (openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
+            );
+          }
           session.onEvent({ type: 'audio-delta', delta: msg.audio });
         }
       } catch (err) {}
@@ -208,7 +261,9 @@ export class VoiceService {
   private sendTextToElevenLabs(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
     if (session?.elevenLabsWs?.readyState === WebSocket.OPEN) {
-      session.elevenLabsWs.send(JSON.stringify({ text, try_trigger_generation: true }));
+      session.elevenLabsWs.send(
+        JSON.stringify({ text, try_trigger_generation: true }),
+      );
     }
   }
 
@@ -229,7 +284,9 @@ export class VoiceService {
           session.elevenLabsWs.close();
         }
       } catch (err) {
-        this.logger.warn(`[${sessionId}] Error closing ElevenLabs WS: ${err.message}`);
+        this.logger.warn(
+          `[${sessionId}] Error closing ElevenLabs WS: ${err.message}`,
+        );
       }
       session.elevenLabsWs = null;
       session.elevenLabsReady = false;
@@ -240,7 +297,10 @@ export class VoiceService {
   /**
    * STEP 5: THE EVENT HUB
    */
-  private async handleRealtimeEvent(sessionId: string, event: any): Promise<void> {
+  private async handleRealtimeEvent(
+    sessionId: string,
+    event: any,
+  ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
@@ -249,6 +309,17 @@ export class VoiceService {
     switch (event.type) {
       case 'response.created':
         session.isResponseActive = true;
+        if (!session.firstResponseCreatedAtMs) {
+          session.firstResponseCreatedAtMs = Date.now();
+          const fromSessionStart =
+            session.firstResponseCreatedAtMs - session.sessionStartedAtMs;
+          const fromGreeting = session.greetingTriggeredAtMs
+            ? session.firstResponseCreatedAtMs - session.greetingTriggeredAtMs
+            : -1;
+          this.logger.log(
+            `[${sessionId}] Timing: first response.created at ${fromSessionStart}ms (after greeting=${fromGreeting}ms)`,
+          );
+        }
         this.openElevenLabsStream(sessionId);
         break;
 
@@ -277,7 +348,9 @@ export class VoiceService {
           try {
             session.ws.send(JSON.stringify({ type: 'response.cancel' }));
           } catch (err) {
-            this.logger.warn(`[${sessionId}] Cancel failed (already finished): ${err.message}`);
+            this.logger.warn(
+              `[${sessionId}] Cancel failed (already finished): ${err.message}`,
+            );
           }
         }
 
@@ -287,7 +360,10 @@ export class VoiceService {
         break;
 
       case 'conversation.item.input_audio_transcription.completed':
-        session.onEvent({ type: 'user-transcript', transcript: event.transcript });
+        session.onEvent({
+          type: 'user-transcript',
+          transcript: event.transcript,
+        });
         break;
 
       case 'response.function_call_arguments.done':
@@ -295,7 +371,9 @@ export class VoiceService {
         break;
 
       case 'error':
-        this.logger.error(`[${sessionId}] OpenAI Error: ${JSON.stringify(event.error)}`);
+        this.logger.error(
+          `[${sessionId}] OpenAI Error: ${JSON.stringify(event.error)}`,
+        );
         break;
     }
   }
@@ -303,14 +381,19 @@ export class VoiceService {
   /**
    * STEP 6: DATA PERSISTENCE (Saving to MongoDB)
    */
-  private async handleFunctionCall(sessionId: string, event: any): Promise<void> {
+  private async handleFunctionCall(
+    sessionId: string,
+    event: any,
+  ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
     if (event.name === 'save_customer_booking') {
       try {
         const args = JSON.parse(event.arguments);
-        this.logger.log(`[${sessionId}] Saving Booking to MongoDB for: ${args.name}`);
+        this.logger.log(
+          `[${sessionId}] Saving Booking to MongoDB for: ${args.name}`,
+        );
 
         const customer = await this.customerModel.create({
           name: args.name,
@@ -323,20 +406,26 @@ export class VoiceService {
           summary: `Tradie Booking: ${args.service_type}`,
         });
 
-        this.logger.log(`[${sessionId}] SUCCESS: Customer saved with ID ${customer._id}`);
+        this.logger.log(
+          `[${sessionId}] SUCCESS: Customer saved with ID ${customer._id}`,
+        );
 
-        session.ws.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: event.call_id,
-            output: JSON.stringify({ success: true, message: 'Saved to Database.' }),
-          },
-        }));
+        session.ws.send(
+          JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+              type: 'function_call_output',
+              call_id: event.call_id,
+              output: JSON.stringify({
+                success: true,
+                message: 'Saved to Database.',
+              }),
+            },
+          }),
+        );
 
         session.ws.send(JSON.stringify({ type: 'response.create' }));
         session.onEvent({ type: 'booking-saved', data: args });
-
       } catch (err) {
         this.logger.error(`[${sessionId}] MongoDB Save Failed:`, err);
       }
@@ -346,7 +435,7 @@ export class VoiceService {
   /**
    * THE AI SCRIPT (System Prompt)
    */
-private getSystemPrompt(): string {
+  private getSystemPrompt(): string {
     return `### IDENTITY ###
 You are Jack — a tradie. You're on the phone with a customer. You talk like a normal, friendly professional.
 Not overly formal, not full of slang. Just a regular person who's good at their job and easy to talk to.
@@ -517,7 +606,15 @@ The key is: after getting the name, let the conversation BREATHE. Don't rapid-fi
           problem_description: { type: 'string' },
           preferred_time: { type: 'string' },
         },
-        required: ['name', 'phone', 'address', 'urgency', 'service_type', 'problem_description', 'preferred_time'],
+        required: [
+          'name',
+          'phone',
+          'address',
+          'urgency',
+          'service_type',
+          'problem_description',
+          'preferred_time',
+        ],
       },
     };
   }
