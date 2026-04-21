@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
+import { ClientRequest } from 'http';
 import { Model } from 'mongoose';
+import { Socket } from 'net';
+import { TLSSocket } from 'tls';
 import WebSocket from 'ws';
 import { Customer, CustomerDocument } from './Schema/customer.schema';
 
@@ -56,6 +59,12 @@ export class VoiceService {
           'OpenAI-Beta': 'realtime=v1',
         },
       });
+      this.instrumentClientWebSocketHandshake(
+        sessionId,
+        'OpenAI',
+        ws,
+        sessionStartedAtMs,
+      );
 
       ws.on('open', () => {
         const openAiConnectedAtMs = Date.now();
@@ -181,6 +190,12 @@ export class VoiceService {
     const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_flash_v2_5&output_format=pcm_16000`;
 
     const elWs = new WebSocket(wsUrl);
+    this.instrumentClientWebSocketHandshake(
+      sessionId,
+      'ElevenLabs',
+      elWs,
+      session.sessionStartedAtMs,
+    );
 
     elWs.on('open', () => {
       this.logger.log(`[${sessionId}] ElevenLabs WebSocket connected`);
@@ -256,6 +271,66 @@ export class VoiceService {
     });
 
     session.elevenLabsWs = elWs;
+  }
+
+  private instrumentClientWebSocketHandshake(
+    sessionId: string,
+    provider: 'OpenAI' | 'ElevenLabs',
+    ws: WebSocket,
+    startedAtMs: number,
+  ): void {
+    const wsWithReq = ws as WebSocket & { _req?: ClientRequest };
+    const req = wsWithReq._req;
+    if (!req) {
+      this.logger.warn(
+        `[${sessionId}] Timing: ${provider} request object not available for low-level socket timings`,
+      );
+      return;
+    }
+
+    let socketHooksAttached = false;
+    const attachSocketHooks = (socket: Socket): void => {
+      if (socketHooksAttached) return;
+      socketHooksAttached = true;
+
+      socket.once('lookup', () => {
+        this.logger.log(
+          `[${sessionId}] Timing: ${provider} DNS lookup completed in ${Date.now() - startedAtMs}ms`,
+        );
+      });
+
+      socket.once('connect', () => {
+        this.logger.log(
+          `[${sessionId}] Timing: ${provider} TCP connect completed in ${Date.now() - startedAtMs}ms`,
+        );
+      });
+
+      (socket as TLSSocket).once('secureConnect', () => {
+        this.logger.log(
+          `[${sessionId}] Timing: ${provider} TLS handshake completed in ${Date.now() - startedAtMs}ms`,
+        );
+      });
+    };
+
+    // Sometimes the request socket is already assigned before we attach listeners.
+    if (req.socket) {
+      attachSocketHooks(req.socket);
+    }
+    req.once('socket', (socket: Socket) => {
+      attachSocketHooks(socket);
+    });
+
+    ws.on('upgrade', () => {
+      this.logger.log(
+        `[${sessionId}] Timing: ${provider} WS upgrade completed in ${Date.now() - startedAtMs}ms`,
+      );
+    });
+
+    ws.on('open', () => {
+      this.logger.log(
+        `[${sessionId}] Timing: ${provider} WS open event at ${Date.now() - startedAtMs}ms`,
+      );
+    });
   }
 
   private sendTextToElevenLabs(sessionId: string, text: string): void {
