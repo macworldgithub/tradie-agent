@@ -3,6 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { VoiceModule } from './voice/voice.module';
 import { AuthModule } from './auth/auth.module';
+import { TradieModule } from './tradie/tradie.module';
+import { LeadModule } from './lead/lead.module';
+import { CallModule } from './call/call.module';
+import { PbxModule } from './pbx/pbx.module';
+import { NotificationModule } from './notification/notification.module';
+import { VoiceAgentModule } from './voice-agent/voice-agent.module';
 
 @Module({
   imports: [
@@ -16,6 +22,12 @@ import { AuthModule } from './auth/auth.module';
     }),
     VoiceModule,
     AuthModule,
+    TradieModule,
+    LeadModule,
+    CallModule,
+    PbxModule,
+    NotificationModule,
+    VoiceAgentModule,
   ],
 })
 export class AppModule {}
