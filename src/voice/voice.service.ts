@@ -1326,13 +1326,11 @@ export class VoiceService {
   /**
    * STEP 5: THE EVENT HUB
    *
-   * IMPORTANT — Function call routing strategy:
-   * We handle function calls ONLY via `response.function_call_arguments.done`.
-   * This is the single authoritative event for a completed function call.
-   *
-   * We deliberately do NOT process function calls in `response.done` or
-   * `response.output_item.done` to prevent duplicate invocations. The
-   * processedFunctionCallIds Set is a final safety net for any edge cases.
+    * IMPORTANT — Function call routing strategy:
+    * OpenAI Realtime can emit function calls in different event shapes
+    * depending on model/runtime behavior. We consume all supported shapes
+    * and rely on call_id deduplication in handleFunctionCall to ensure a
+    * single DB write.
    */
   private async handleRealtimeEvent(
     sessionId: string,
@@ -1360,12 +1358,20 @@ export class VoiceService {
         this.openElevenLabsStream(sessionId);
         break;
 
-      // FIX 3: response.done no longer processes function calls.
-      // Doing so in addition to response.function_call_arguments.done was
-      // the primary cause of duplicate DB saves. response.done now only
-      // updates the isResponseActive flag.
       case 'response.done':
         session.isResponseActive = false;
+        {
+          const typedEvent = event as { response?: { output?: unknown } };
+          const outputs = typedEvent.response?.output;
+          if (Array.isArray(outputs)) {
+            for (const item of outputs) {
+              const functionCall = this.toFunctionCallPayload(item);
+              if (functionCall) {
+                await this.handleFunctionCall(sessionId, functionCall);
+              }
+            }
+          }
+        }
         break;
 
       case 'response.text.delta':
@@ -1407,11 +1413,18 @@ export class VoiceService {
         });
         break;
 
-      // FIX 3: This is now the SOLE handler for function calls.
-      // response.output_item.done is no longer used for function call processing
-      // to eliminate the duplicate-fire race condition.
       case 'response.function_call_arguments.done':
         await this.handleFunctionCall(sessionId, event);
+        break;
+
+      case 'response.output_item.done':
+        {
+          const typedEvent = event as { item?: unknown };
+          const functionCall = this.toFunctionCallPayload(typedEvent.item);
+          if (functionCall) {
+            await this.handleFunctionCall(sessionId, functionCall);
+          }
+        }
         break;
 
       case 'error':
@@ -1661,8 +1674,13 @@ You are ONLY here to help with tradie bookings and trade-related work. You have 
 
 ### THE BOOKING FLOW ###
 
-You need to collect these details: name, phone, address, urgency, service type, problem description, preferred time.
+You must populate these 7 booking fields before save_customer_booking: name, phone, address, urgency, service type, problem description, preferred time.
 Do it conversationally — not like a form. And critically: the PROBLEM CLARITY & SEVERITY SCORING rules above govern what you skip and how you behave at every step.
+
+For HIGH SEVERITY calls, fields can be populated by inference instead of direct questions:
+- urgency = "urgent"
+- preferred_time = "ASAP"
+- service_type inferred from context if caller did not state it
 
 ─────────────────────────────────────────────
 STEP 1 — NAME
@@ -1751,6 +1769,9 @@ Once you have all 7 details, you MUST ask this question FIRST — before doing a
   "Perfect, I've got all the details. Is there anything else you'd like to add before I send this through?"
 
 Do NOT call the save function yet. Wait for the caller's response.
+
+If the caller is silent or unclear after this question, re-engage quickly (no long pause) with one short prompt like:
+"No rush — should I send this through now, or did you want to add anything else?"
 
 ─────────────────────────────────────────────
 STEP B — HANDLE THEIR RESPONSE
