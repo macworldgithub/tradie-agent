@@ -25,6 +25,11 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Tradie AI Voice Notes
+
+- ARI bridge status endpoint: `GET /ari/health`
+- Phase 1 deployment runbook: `Docs/phase-1-asterisk-ari-setup.md`
+
 ## Project setup
 
 ```bash

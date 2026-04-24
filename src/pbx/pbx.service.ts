@@ -20,10 +20,12 @@ export class PbxService {
   private readonly pbxClient: AxiosInstance;
   private readonly apiKey: string;
   private readonly baseUrl: string;
+  private readonly server: string;
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('PBX_API_KEY');
     const baseUrl = this.configService.get<string>('PBX_BASE_URL');
+    const server = this.configService.get<string>('PBX_SERVER') ?? '440';
 
     if (!apiKey || !baseUrl) {
       throw new Error('PBX_API_KEY and PBX_BASE_URL must be configured');
@@ -31,6 +33,7 @@ export class PbxService {
 
     this.apiKey = apiKey;
     this.baseUrl = baseUrl;
+    this.server = server;
 
     this.pbxClient = axios.create({
       baseURL: this.baseUrl,
@@ -38,20 +41,26 @@ export class PbxService {
     });
   }
 
-  private async pbxRequest(action: string, params: any = {}): Promise<PbxResponse> {
+  private async pbxRequest(
+    action: string,
+    params: any = {},
+  ): Promise<PbxResponse> {
     try {
-      this.logger.log(`PBX Request: action=${action}, params=${JSON.stringify(params)}`);
+      this.logger.log(
+        `PBX Request: action=${action}, params=${JSON.stringify(params)}`,
+      );
 
       const queryParams = {
         apikey: this.apiKey,
         action,
+        server: this.server,
         ...params,
       };
 
       const response = await this.pbxClient.get('', {
         params: queryParams,
       });
-      
+
       this.logger.log(`PBX Response: ${JSON.stringify(response.data)}`);
 
       const data =
@@ -66,12 +75,14 @@ export class PbxService {
       } else {
         return { success: false, error: data?.message || 'Unknown PBX error' };
       }
-
     } catch (error) {
       this.logger.error(`PBX Request failed: ${error.message}`);
-      return { 
-        success: false, 
-        error: error.response?.data?.message || error.message || 'PBX request failed' 
+      return {
+        success: false,
+        error:
+          error.response?.data?.message ||
+          error.message ||
+          'PBX request failed',
       };
     }
   }
@@ -99,7 +110,10 @@ export class PbxService {
    * Transfer a call to another destination
    * action: pbxware.call.transfer
    */
-  async transferCall(callId: string, destination: string): Promise<PbxResponse> {
+  async transferCall(
+    callId: string,
+    destination: string,
+  ): Promise<PbxResponse> {
     return this.pbxRequest('pbxware.call.transfer', {
       call_id: callId,
       destination,

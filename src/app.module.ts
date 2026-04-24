@@ -9,6 +9,7 @@ import { CallModule } from './call/call.module';
 import { PbxModule } from './pbx/pbx.module';
 import { NotificationModule } from './notification/notification.module';
 import { VoiceAgentModule } from './voice-agent/voice-agent.module';
+import { AriModule } from './ari/ari.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { VoiceAgentModule } from './voice-agent/voice-agent.module';
     PbxModule,
     NotificationModule,
     VoiceAgentModule,
+    AriModule,
   ],
 })
 export class AppModule {}
