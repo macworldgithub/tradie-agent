@@ -664,7 +664,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     callId: string,
   ): Promise<string | undefined> {
     const wsPort = this.configService.get<number>('WEBSOCKET_PORT', 9090);
-    const wsUrl = `ws://localhost:${wsPort}/?callId=${callId}`;
+    const wsHost = `localhost:${wsPort}`;
 
     const response = await this.ariRequest<any>(
       'post',
@@ -672,15 +672,15 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       {
         app: this.getAriApp(),
         channelId: `extmedia-${callId}`,
-        external_host: wsUrl,
+        external_host: wsHost, // Just host:port format
         format: 'slin', // 8kHz, 16-bit signed PCM mono
         direction: 'both',
-        transport: 'ws', // WebSocket transport
+        // Remove transport parameter - not supported in this Asterisk version
       },
     );
 
     this.logger.log(
-      `Created WebSocket externalMedia channel for call=${callId} url=${wsUrl}`,
+      `Created WebSocket externalMedia channel for call=${callId} host=${wsHost}`,
     );
     return response?.id;
   }
