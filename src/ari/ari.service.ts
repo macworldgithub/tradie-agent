@@ -35,6 +35,14 @@ type AriCallSession = {
   createdAt: string;
 };
 
+type AiSession = {
+  callId: string;
+  ws: WebSocket;
+  userSpeaking: boolean;
+  responseActive: boolean;
+  closed: boolean;
+};
+
 @Injectable()
 export class AriService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AriService.name);
@@ -43,6 +51,8 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   private connected = false;
   private readonly ariHttpClient: AxiosInstance;
   private readonly sessions = new Map<string, AriCallSession>();
+  private readonly aiSessions = new Map<string, AiSession>();
+  private readonly cleanupInProgress = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -59,6 +69,10 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
+    this.ariRtpMediaService.setAudioFrameHandler((frame) => {
+      this.handleInboundRtpFrame(frame.callId, frame.payload);
+    });
+
     const autoConnect = this.configService.get<string>(
       'ASTERISK_ARI_AUTO_CONNECT',
     );
@@ -71,6 +85,10 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     if (this.eventSocket) {
       this.eventSocket.close();
       this.eventSocket = null;
+    }
+
+    for (const callId of this.aiSessions.keys()) {
+      this.cleanupAiSession(callId);
     }
   }
 
@@ -161,6 +179,24 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     const callId = channelId;
     const bridgeId = `bridge-${callId}`;
 
+    let aiInstructions = this.getDefaultAiInstructions();
+
+    try {
+      const aiContext = await this.voiceAgentService.handleIncomingCall({
+        call_id: callId,
+        caller_number: callerNumber,
+        called_number: calledNumber,
+      });
+
+      if (aiContext?.success && typeof aiContext.ai_instructions === 'string') {
+        aiInstructions = aiContext.ai_instructions;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to build AI call context for ${callId}: ${(error as Error).message}`,
+      );
+    }
+
     try {
       await this.answerChannel(channelId);
       await this.createBridge(bridgeId);
@@ -188,6 +224,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       });
 
       this.ariRtpMediaService.registerCallSession(callId);
+      this.startAiSession(callId, aiInstructions);
 
       this.logger.log(
         `ARI bridge ready. call=${callId} bridge=${bridgeId} extMedia=${externalMediaChannelId || 'none'}`,
@@ -197,12 +234,6 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
         `Failed to initialize ARI call bridge for ${callId}: ${(error as Error).message}`,
       );
     }
-
-    await this.voiceAgentService.handleIncomingCall({
-      call_id: callId,
-      caller_number: callerNumber,
-      called_number: calledNumber,
-    });
   }
 
   private async handleChannelCleanup(event: AriEvent) {
@@ -232,8 +263,15 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async cleanupSession(callId: string) {
+    if (this.cleanupInProgress.has(callId)) {
+      return;
+    }
+    this.cleanupInProgress.add(callId);
+
     const session = this.sessions.get(callId);
     if (!session) {
+      this.cleanupAiSession(callId);
+      this.cleanupInProgress.delete(callId);
       return;
     }
 
@@ -244,7 +282,214 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     }
     await this.safeDestroyBridge(session.bridgeId);
     this.ariRtpMediaService.unregisterCallSession(callId);
+    this.cleanupAiSession(callId);
     this.sessions.delete(callId);
+    this.cleanupInProgress.delete(callId);
+  }
+
+  private handleInboundRtpFrame(callId: string, ulawPayload: Buffer) {
+    const aiSession = this.aiSessions.get(callId);
+    if (
+      !aiSession ||
+      aiSession.closed ||
+      aiSession.ws.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+
+    try {
+      aiSession.ws.send(
+        JSON.stringify({
+          type: 'input_audio_buffer.append',
+          audio: ulawPayload.toString('base64'),
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Failed to send inbound RTP frame to AI for call=${callId}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private startAiSession(callId: string, instructions: string) {
+    const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    if (!apiKey) {
+      this.logger.warn(
+        `OPENAI_API_KEY missing. AI pipeline disabled for call=${callId}`,
+      );
+      return;
+    }
+
+    const model =
+      this.configService.get<string>('OPENAI_REALTIME_MODEL') ||
+      'gpt-4o-mini-realtime-preview';
+    const wsUrl = `wss://api.openai.com/v1/realtime?model=${model}`;
+
+    const ws = new WebSocket(wsUrl, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'OpenAI-Beta': 'realtime=v1',
+      },
+    });
+
+    const aiSession: AiSession = {
+      callId,
+      ws,
+      userSpeaking: false,
+      responseActive: false,
+      closed: false,
+    };
+    this.aiSessions.set(callId, aiSession);
+
+    ws.on('open', () => {
+      this.logger.log(`AI Realtime connected for call=${callId}`);
+
+      ws.send(
+        JSON.stringify({
+          type: 'session.update',
+          session: {
+            modalities: ['audio', 'text'],
+            instructions,
+            input_audio_format: 'g711_ulaw',
+            output_audio_format: 'g711_ulaw',
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.6,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
+              create_response: true,
+              interrupt_response: true,
+            },
+          },
+        }),
+      );
+
+      ws.send(
+        JSON.stringify({
+          type: 'response.create',
+          response: {
+            instructions:
+              'Greet the caller briefly and ask how you can help today.',
+          },
+        }),
+      );
+    });
+
+    ws.on('message', (rawData: WebSocket.RawData) => {
+      this.handleAiRealtimeEvent(callId, rawData.toString());
+    });
+
+    ws.on('error', (error) => {
+      this.logger.warn(
+        `AI Realtime error for call=${callId}: ${error.message}`,
+      );
+    });
+
+    ws.on('close', () => {
+      const session = this.aiSessions.get(callId);
+      if (session) {
+        session.closed = true;
+      }
+      this.aiSessions.delete(callId);
+      this.logger.log(`AI Realtime closed for call=${callId}`);
+    });
+  }
+
+  private handleAiRealtimeEvent(callId: string, rawEvent: string) {
+    const aiSession = this.aiSessions.get(callId);
+    if (!aiSession) {
+      return;
+    }
+
+    try {
+      const event = JSON.parse(rawEvent) as {
+        type?: string;
+        delta?: string;
+        error?: { message?: string };
+      };
+
+      switch (event.type) {
+        case 'response.created':
+          aiSession.responseActive = true;
+          break;
+        case 'response.done':
+          aiSession.responseActive = false;
+          break;
+        case 'input_audio_buffer.speech_started':
+          aiSession.userSpeaking = true;
+          this.handleBargeIn(callId);
+          break;
+        case 'input_audio_buffer.speech_stopped':
+          aiSession.userSpeaking = false;
+          break;
+        case 'response.audio.delta':
+          if (aiSession.userSpeaking || !event.delta) {
+            return;
+          }
+          this.ariRtpMediaService.sendUlawToCall(
+            callId,
+            Buffer.from(event.delta, 'base64'),
+          );
+          break;
+        case 'error':
+          this.logger.warn(
+            `AI event error for call=${callId}: ${event.error?.message || 'unknown'}`,
+          );
+          break;
+        default:
+          break;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to parse AI event for call=${callId}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  private handleBargeIn(callId: string) {
+    const aiSession = this.aiSessions.get(callId);
+    if (!aiSession || aiSession.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    if (aiSession.responseActive) {
+      aiSession.ws.send(JSON.stringify({ type: 'response.cancel' }));
+      aiSession.responseActive = false;
+      this.logger.debug(
+        `Barge-in triggered response.cancel for call=${callId}`,
+      );
+    }
+  }
+
+  private cleanupAiSession(callId: string) {
+    const aiSession = this.aiSessions.get(callId);
+    if (!aiSession) {
+      return;
+    }
+
+    aiSession.closed = true;
+    try {
+      if (aiSession.ws.readyState === WebSocket.OPEN) {
+        aiSession.ws.close();
+      } else if (aiSession.ws.readyState === WebSocket.CONNECTING) {
+        aiSession.ws.terminate();
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Failed to cleanup AI session for call=${callId}: ${(error as Error).message}`,
+      );
+    }
+
+    this.aiSessions.delete(callId);
+  }
+
+  private getDefaultAiInstructions() {
+    return [
+      'You are a professional phone voice assistant for a local tradie business.',
+      'Speak briefly and naturally.',
+      'Collect: caller name, issue, address/suburb, and best callback number.',
+      'If interrupted, stop and listen immediately.',
+    ].join(' ');
   }
 
   private async answerChannel(channelId: string) {
