@@ -4,17 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import {
-  WebSocketGateway,
-  WebSocketServer,
-  SubscribeMessage,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-  OnGatewayInit,
-  ConnectedSocket,
-  MessageBody,
-} from '@nestjs/websockets';
-import { Server, WebSocket } from 'ws';
+import { WebSocket } from 'ws';
 import { ConfigService } from '@nestjs/config';
 
 /**
@@ -30,24 +20,12 @@ import { ConfigService } from '@nestjs/config';
  * 4. AI response audio is sent back to Asterisk
  * 5. When AI is done, the call is hung up
  */
-@WebSocketGateway({
-  port: 9090,
-  path: '/',
-  transports: ['websocket'],
-  cors: false,
-})
+import { WebSocketServer } from 'ws';
+
 @Injectable()
-export class AriWebSocketGateway
-  implements
-    OnGatewayInit,
-    OnGatewayConnection,
-    OnGatewayDisconnect,
-    OnModuleInit,
-    OnModuleDestroy
-{
+export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AriWebSocketGateway.name);
-  @WebSocketServer()
-  server: Server;
+  private server: WebSocketServer;
 
   // Map WebSocket connections to call IDs
   private readonly wsToCallId = new Map<WebSocket, string>();
@@ -61,13 +39,20 @@ export class AriWebSocketGateway
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
-    this.logger.log('AriWebSocketGateway initialized');
-  }
+    const port = this.configService.get<number>('WEBSOCKET_PORT', 9090);
 
-  afterInit(server: Server) {
-    this.logger.log(
-      `WebSocket server listening on port ${this.configService.get<number>('WEBSOCKET_PORT', 9090)}`,
-    );
+    this.server = new WebSocketServer({ port });
+
+    this.server.on('connection', (ws: WebSocket, request) => {
+      this.handleConnection(ws, request);
+    });
+
+    this.server.on('error', (error) => {
+      this.logger.error('WebSocket server error:', error);
+    });
+
+    this.logger.log(`WebSocket server listening on port ${port}`);
+    this.logger.log('AriWebSocketGateway initialized');
   }
 
   onModuleDestroy() {
