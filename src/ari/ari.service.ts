@@ -678,7 +678,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     callId: string,
   ): Promise<string | undefined> {
     const wsPort = this.configService.get<number>('WEBSOCKET_PORT', 9090);
-    const wsHost = `localhost:${wsPort}`;
+    const wsHost = `127.0.0.1:${wsPort}`; // Use IP instead of localhost for Asterisk DNS
 
     this.logger.log(`[${callId}] Creating externalMedia with host=${wsHost}`);
 
@@ -688,7 +688,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       {
         app: this.getAriApp(),
         channelId: `extmedia-${callId}`,
-        external_host: wsHost, // Just host:port format
+        external_host: wsHost, // Use IP instead of localhost
         format: 'slin', // 8kHz, 16-bit signed PCM mono
         direction: 'both',
         // Remove transport parameter - not supported in this Asterisk version
