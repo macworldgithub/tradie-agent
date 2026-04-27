@@ -137,6 +137,20 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (channelId.startsWith('extmedia-')) {
+      this.logger.debug(
+        `Ignoring StasisStart for externalMedia channel=${channelId}`,
+      );
+      return;
+    }
+
+    if (this.sessions.has(channelId)) {
+      this.logger.warn(
+        `Ignoring duplicate StasisStart for channel=${channelId}`,
+      );
+      return;
+    }
+
     this.logger.log(
       `StasisStart received. channel=${channelId || 'unknown'} caller=${callerNumber} called=${calledNumber}`,
     );
