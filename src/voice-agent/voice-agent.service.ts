@@ -1,7 +1,7 @@
-import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TradieService } from '../tradie/tradie.service';
-import { CallService } from '../call/call.service';
+import { LeadService } from '../lead/lead.service';
 
 @Injectable()
 export class VoiceAgentService {
@@ -9,8 +9,7 @@ export class VoiceAgentService {
 
   constructor(
     private readonly tradieService: TradieService,
-    @Inject(forwardRef(() => CallService))
-    private readonly callService: CallService,
+    private readonly leadService: LeadService,
     private readonly configService: ConfigService,
   ) {}
 
@@ -88,8 +87,8 @@ export class VoiceAgentService {
     this.logger.log(`Processing lead data from AI for call: ${leadData.call_id}`);
 
     try {
-      // Forward to CallService for processing
-      return await this.callService.handleAIData(leadData);
+      const lead = await this.leadService.createFromAIData(leadData);
+      return { success: true, lead_id: (lead as any)._id };
 
     } catch (error) {
       this.logger.error(`Error processing AI lead data: ${error.message}`);

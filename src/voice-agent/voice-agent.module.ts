@@ -1,14 +1,11 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { VoiceAgentController } from './voice-agent.controller';
 import { VoiceAgentService } from './voice-agent.service';
 import { TradieModule } from '../tradie/tradie.module';
-import { CallModule } from '../call/call.module';
+import { LeadModule } from '../lead/lead.module';
 
 @Module({
-  imports: [
-    TradieModule,
-    forwardRef(() => CallModule),
-  ],
+  imports: [TradieModule, LeadModule],
   controllers: [VoiceAgentController],
   providers: [VoiceAgentService],
   exports: [VoiceAgentService],

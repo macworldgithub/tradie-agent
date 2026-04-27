@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
+import { TradieService } from '../tradie/tradie.service';
 
 export interface PbxResponse {
   success: boolean;
@@ -22,7 +23,10 @@ export class PbxService {
   private readonly baseUrl: string;
   private readonly server: string;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly tradieService: TradieService,
+  ) {
     const apiKey = this.configService.get<string>('PBX_API_KEY');
     const baseUrl = this.configService.get<string>('PBX_BASE_URL');
     const server = this.configService.get<string>('PBX_SERVER') ?? '440';
@@ -38,6 +42,115 @@ export class PbxService {
     this.pbxClient = axios.create({
       baseURL: this.baseUrl,
       timeout: 10000,
+    });
+  }
+
+  async handleIncomingCall(callData: {
+    caller_number: string;
+    called_number: string;
+    call_id: string;
+  }) {
+    this.logger.log(
+      `Handling incoming call: ${callData.call_id} from ${callData.caller_number} to ${callData.called_number}`,
+    );
+
+    try {
+      const tradie = await this.tradieService.findByGeoNumber(callData.called_number);
+      if (!tradie) {
+        this.logger.error(`No tradie found for geo number: ${callData.called_number}`);
+        return { success: false, error: 'No tradie found' };
+      }
+
+      const tradieId = (tradie as any)._id.toString();
+      const isAvailable = await this.tradieService.isAvailable(tradieId);
+      if (!isAvailable) {
+        this.logger.log(`Tradie ${tradieId} is not available, redirecting to AI`);
+        return this.redirectIncomingCallToAI(callData.call_id, tradie.ai_endpoint);
+      }
+
+      const dialResult = await this.dialTradie(tradie.mobile_number, callData.call_id);
+      if (!dialResult.success) {
+        this.logger.error(`Failed to dial tradie: ${dialResult.error}`);
+        return this.redirectIncomingCallToAI(callData.call_id, tradie.ai_endpoint);
+      }
+
+      const answerResult = await this.waitForTradieAnswer(callData.call_id, 6000);
+      if (answerResult.answered) {
+        this.logger.log(`Tradie answered call ${callData.call_id}`);
+        return { success: true, action: 'connected_to_tradie' };
+      }
+
+      this.logger.log(`Tradie did not answer within timeout, redirecting to AI`);
+      return this.redirectIncomingCallToAI(callData.call_id, tradie.ai_endpoint);
+    } catch (error) {
+      this.logger.error(`Error handling incoming call: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  private async waitForTradieAnswer(
+    callId: string,
+    timeoutMs: number,
+  ): Promise<{ answered: boolean }> {
+    return new Promise((resolve) => {
+      let checkCount = 0;
+      const maxChecks = Math.floor(timeoutMs / 1000);
+
+      const checkInterval = setInterval(async () => {
+        checkCount += 1;
+
+        try {
+          const status = await this.getCallStatus(callId);
+
+          if (status.answered) {
+            clearInterval(checkInterval);
+            resolve({ answered: true });
+            return;
+          }
+
+          if (checkCount >= maxChecks) {
+            clearInterval(checkInterval);
+            resolve({ answered: false });
+            return;
+          }
+        } catch (error) {
+          this.logger.error(`Error checking call status: ${error.message}`);
+          clearInterval(checkInterval);
+          resolve({ answered: false });
+        }
+      }, 1000);
+    });
+  }
+
+  private async redirectIncomingCallToAI(callId: string, tradieAiEndpoint?: string) {
+    try {
+      const aiEndpoint = tradieAiEndpoint || this.configService.get<string>('AI_ENDPOINT');
+
+      if (!aiEndpoint) {
+        throw new Error('No AI endpoint configured');
+      }
+
+      this.logger.log(`Redirecting call ${callId} to AI endpoint: ${aiEndpoint}`);
+
+      const redirectResult = await this.redirectToAIEndpoint(callId, aiEndpoint);
+      if (!redirectResult.success) {
+        throw new Error(redirectResult.error);
+      }
+
+      return { success: true, action: 'redirected_to_ai', ai_endpoint: aiEndpoint };
+    } catch (error) {
+      this.logger.error(`Error redirecting to AI: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+  }
+
+  private async redirectToAIEndpoint(
+    callId: string,
+    aiEndpoint: string,
+  ): Promise<PbxResponse> {
+    return this.pbxRequest('pbxware.call.redirect', {
+      call_id: callId,
+      destination: aiEndpoint,
     });
   }
 
@@ -125,10 +238,7 @@ export class PbxService {
    * action: pbxware.call.redirect
    */
   async redirectToAI(callId: string, aiEndpoint: string): Promise<PbxResponse> {
-    return this.pbxRequest('pbxware.call.redirect', {
-      call_id: callId,
-      destination: aiEndpoint,
-    });
+    return this.redirectToAIEndpoint(callId, aiEndpoint);
   }
 
   /**

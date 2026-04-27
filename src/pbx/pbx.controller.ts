@@ -1,15 +1,10 @@
-import { Controller, Post, Body, Get, Patch, Delete, Param, Res, HttpStatus, Inject, forwardRef } from '@nestjs/common';
+import { Controller, Post, Body, Get, Patch, Delete, Param, Res, HttpStatus } from '@nestjs/common';
 import type { Response } from 'express';
 import { PbxService } from './pbx.service';
-import { CallService } from '../call/call.service';
 
 @Controller('pbx')
 export class PbxController {
-  constructor(
-    private readonly pbxService: PbxService,
-    @Inject(forwardRef(() => CallService))
-    private readonly callService: CallService,
-  ) {}
+  constructor(private readonly pbxService: PbxService) {}
 
   /**
    * Webhook endpoint for incoming calls from PBX
@@ -23,7 +18,7 @@ export class PbxController {
   }, @Res() res: Response) {
     try {
       // Process the call asynchronously
-      this.callService.handleIncomingCall(callData).catch(error => {
+      this.pbxService.handleIncomingCall(callData).catch(error => {
         console.error('Async call handling failed:', error);
       });
 

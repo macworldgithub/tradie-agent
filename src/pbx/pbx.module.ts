@@ -1,12 +1,10 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { PbxService } from './pbx.service';
 import { PbxController } from './pbx.controller';
-import { CallModule } from '../call/call.module';
+import { TradieModule } from '../tradie/tradie.module';
 
 @Module({
-  imports: [
-    forwardRef(() => CallModule),
-  ],
+  imports: [TradieModule],
   controllers: [PbxController],
   providers: [PbxService],
   exports: [PbxService],
