@@ -39,20 +39,25 @@ export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
-    const port = this.configService.get<number>('WEBSOCKET_PORT', 9090);
+    try {
+      const port = this.configService.get<number>('WEBSOCKET_PORT', 9090);
+      this.logger.log(`Attempting to start WebSocket server on port ${port}`);
 
-    this.server = new WebSocketServer({ port });
+      this.server = new WebSocketServer({ port });
 
-    this.server.on('connection', (ws: WebSocket, request) => {
-      this.handleConnection(ws, request);
-    });
+      this.server.on('connection', (ws: WebSocket, request) => {
+        this.handleConnection(ws, request);
+      });
 
-    this.server.on('error', (error) => {
-      this.logger.error('WebSocket server error:', error);
-    });
+      this.server.on('error', (error) => {
+        this.logger.error('WebSocket server error:', error);
+      });
 
-    this.logger.log(`WebSocket server listening on port ${port}`);
-    this.logger.log('AriWebSocketGateway initialized');
+      this.logger.log(`WebSocket server listening on port ${port}`);
+      this.logger.log('AriWebSocketGateway initialized');
+    } catch (error) {
+      this.logger.error('Failed to start WebSocket server:', error);
+    }
   }
 
   onModuleDestroy() {
