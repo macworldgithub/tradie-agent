@@ -208,18 +208,30 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      this.logger.log(`[${callId}] Step 1: Answering channel ${channelId}`);
       await this.answerChannel(channelId);
+      this.logger.log(`[${callId}] Step 2: Creating bridge ${bridgeId}`);
       await this.createBridge(bridgeId);
+      this.logger.log(
+        `[${callId}] Step 3: Adding channel ${channelId} to bridge`,
+      );
       await this.addChannelToBridge(bridgeId, channelId);
 
       // Use WebSocket externalMedia instead of RTP
+      this.logger.log(
+        `[${callId}] Step 4: Creating WebSocket externalMedia channel`,
+      );
       const externalMediaChannelId =
         await this.createWebSocketExternalMediaChannel(callId);
 
       if (externalMediaChannelId) {
+        this.logger.log(
+          `[${callId}] Step 5: Adding externalMedia channel ${externalMediaChannelId} to bridge`,
+        );
         await this.addChannelToBridge(bridgeId, externalMediaChannelId);
       }
 
+      this.logger.log(`[${callId}] Step 6: Setting up session data`);
       this.sessions.set(callId, {
         callId,
         inboundChannelId: channelId,
@@ -228,8 +240,10 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
         createdAt: new Date().toISOString(),
       });
 
+      this.logger.log(`[${callId}] Step 7: Registering with RTP service`);
       // Register with RTP for backward compatibility but use WebSocket for audio
       this.ariRtpMediaService.registerCallSession(callId);
+      this.logger.log(`[${callId}] Step 8: Starting AI session`);
       this.startAiSession(callId, aiInstructions);
 
       this.logger.log(
