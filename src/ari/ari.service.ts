@@ -9,6 +9,7 @@ import axios, { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
 import { VoiceAgentService } from '../voice-agent/voice-agent.service';
 import { AriRtpMediaService } from './ari-rtp-media.service';
+import { AriWebSocketGateway } from './ari-websocket.gateway';
 
 type AriEvent = {
   type?: string;
@@ -41,6 +42,7 @@ type AiSession = {
   userSpeaking: boolean;
   responseActive: boolean;
   closed: boolean;
+  processingAudio: boolean;
 };
 
 @Injectable()
@@ -58,6 +60,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly voiceAgentService: VoiceAgentService,
     private readonly ariRtpMediaService: AriRtpMediaService,
+    private readonly ariWebSocketGateway: AriWebSocketGateway,
   ) {
     this.ariHttpClient = axios.create({
       timeout: 10000,
@@ -69,6 +72,12 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit() {
+    // Set up WebSocket audio processor
+    this.ariWebSocketGateway.setAudioProcessor((callId, audioBuffer) => {
+      return this.processWebSocketAudio(callId, audioBuffer);
+    });
+
+    // Keep RTP for backward compatibility but don't use it for new calls
     this.ariRtpMediaService.setAudioFrameHandler((frame) => {
       this.handleInboundRtpFrame(frame.callId, frame.payload);
     });
@@ -99,6 +108,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       ariUrl: this.getAriBaseUrl(),
       activeSessions: this.sessions.size,
       rtp: this.ariRtpMediaService.getHealth(),
+      websocket: this.ariWebSocketGateway.getHealth(),
       lastEventAt: this.lastEventAt,
       timestamp: new Date().toISOString(),
     };
@@ -202,14 +212,9 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       await this.createBridge(bridgeId);
       await this.addChannelToBridge(bridgeId, channelId);
 
-      const externalMediaHost =
-        this.configService.get<string>('ASTERISK_EXTERNAL_MEDIA_HOST') ||
-        '127.0.0.1:6000';
-
-      const externalMediaChannelId = await this.createExternalMediaChannel(
-        callId,
-        externalMediaHost,
-      );
+      // Use WebSocket externalMedia instead of RTP
+      const externalMediaChannelId =
+        await this.createWebSocketExternalMediaChannel(callId);
 
       if (externalMediaChannelId) {
         await this.addChannelToBridge(bridgeId, externalMediaChannelId);
@@ -223,11 +228,12 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
         createdAt: new Date().toISOString(),
       });
 
+      // Register with RTP for backward compatibility but use WebSocket for audio
       this.ariRtpMediaService.registerCallSession(callId);
       this.startAiSession(callId, aiInstructions);
 
       this.logger.log(
-        `ARI bridge ready. call=${callId} bridge=${bridgeId} extMedia=${externalMediaChannelId || 'none'}`,
+        `ARI bridge ready. call=${callId} bridge=${bridgeId} wsExtMedia=${externalMediaChannelId || 'none'}`,
       );
     } catch (error) {
       this.logger.error(
@@ -288,11 +294,13 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   }
 
   private handleInboundRtpFrame(callId: string, ulawPayload: Buffer) {
+    // Keep RTP handler for backward compatibility but prioritize WebSocket
     const aiSession = this.aiSessions.get(callId);
     if (
       !aiSession ||
       aiSession.closed ||
-      aiSession.ws.readyState !== WebSocket.OPEN
+      aiSession.ws.readyState !== WebSocket.OPEN ||
+      aiSession.processingAudio // Don't use RTP if WebSocket is active
     ) {
       return;
     }
@@ -309,6 +317,126 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
         `Failed to send inbound RTP frame to AI for call=${callId}: ${(error as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Process WebSocket audio frames from Asterisk externalMedia
+   * This receives 8kHz, 16-bit signed PCM mono audio and forwards to AI
+   */
+  private async processWebSocketAudio(
+    callId: string,
+    audioBuffer: Buffer,
+  ): Promise<Buffer | null> {
+    const aiSession = this.aiSessions.get(callId);
+    if (!aiSession || aiSession.closed) {
+      return null;
+    }
+
+    // Mark that we're processing WebSocket audio for this call
+    aiSession.processingAudio = true;
+
+    try {
+      // Convert slin (16-bit PCM) to ulaw for OpenAI Realtime API
+      const ulawBuffer = this.convertSlinToUlaw(audioBuffer);
+
+      if (aiSession.ws.readyState === WebSocket.OPEN) {
+        aiSession.ws.send(
+          JSON.stringify({
+            type: 'input_audio_buffer.append',
+            audio: ulawBuffer.toString('base64'),
+          }),
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to process WebSocket audio for call=${callId}: ${(error as Error).message}`,
+      );
+    }
+
+    // Return null - AI responses will be handled via the existing WebSocket event handlers
+    return null;
+  }
+
+  /**
+   * Convert 16-bit signed PCM (slin) to G.711 u-law
+   */
+  private convertSlinToUlaw(slinBuffer: Buffer): Buffer {
+    const ulawBuffer = Buffer.alloc(slinBuffer.length / 2);
+
+    for (let i = 0; i < slinBuffer.length; i += 2) {
+      const sample = slinBuffer.readInt16LE(i);
+      ulawBuffer[i / 2] = this.linearToUlaw(sample);
+    }
+
+    return ulawBuffer;
+  }
+
+  /**
+   * Convert 16-bit linear sample to 8-bit u-law
+   */
+  private linearToUlaw(sample: number): number {
+    const BIAS = 0x84;
+    const CLIP = 32635;
+
+    // Get the sign and magnitude
+    const sign = (sample >> 8) & 0x80;
+    if (sign !== 0) {
+      sample = -sample;
+    }
+
+    // Clip the magnitude
+    if (sample > CLIP) {
+      sample = CLIP;
+    }
+
+    // Add bias
+    sample += BIAS;
+
+    // Convert to u-law
+    let ulaw = sign | ((sample >> 2) & 0x0f);
+    ulaw |= ((sample >> 6) & 0x0f) << 4;
+
+    return ~ulaw & 0xff;
+  }
+
+  /**
+   * Convert G.711 u-law to 16-bit signed PCM (slin)
+   */
+  private convertUlawToSlin(ulawBuffer: Buffer): Buffer {
+    const slinBuffer = Buffer.alloc(ulawBuffer.length * 2);
+
+    for (let i = 0; i < ulawBuffer.length; i++) {
+      const sample = this.ulawToLinear(ulawBuffer[i]);
+      slinBuffer.writeInt16LE(sample, i * 2);
+    }
+
+    return slinBuffer;
+  }
+
+  /**
+   * Convert 8-bit u-law to 16-bit linear sample
+   */
+  private ulawToLinear(ulaw: number): number {
+    const BIAS = 0x84;
+
+    // Invert all bits
+    ulaw = ~ulaw & 0xff;
+
+    // Extract sign and magnitude
+    const sign = ulaw & 0x80;
+    const exponent = (ulaw >> 4) & 0x07;
+    const mantissa = ulaw & 0x0f;
+
+    // Reconstruct the sample
+    let sample = (mantissa << 4) | 0x08;
+    sample <<= exponent;
+    sample -= BIAS;
+
+    if (sign !== 0) {
+      sample = -sample;
+    }
+
+    return sample;
   }
 
   private startAiSession(callId: string, instructions: string) {
@@ -338,6 +466,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       userSpeaking: false,
       responseActive: false,
       closed: false,
+      processingAudio: false, // Initialize WebSocket audio flag
     };
     this.aiSessions.set(callId, aiSession);
 
@@ -426,10 +555,19 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
           if (aiSession.userSpeaking || !event.delta) {
             return;
           }
-          this.ariRtpMediaService.sendUlawToCall(
-            callId,
-            Buffer.from(event.delta, 'base64'),
-          );
+
+          // Convert base64 ulaw to buffer
+          const ulawBuffer = Buffer.from(event.delta, 'base64');
+
+          // If WebSocket is active, send via WebSocket, otherwise use RTP
+          if (aiSession.processingAudio) {
+            // Convert ulaw to slin for WebSocket
+            const slinBuffer = this.convertUlawToSlin(ulawBuffer);
+            this.ariWebSocketGateway.sendAudioToCall(callId, slinBuffer);
+          } else {
+            // Use RTP for backward compatibility
+            this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
+          }
           break;
         case 'error':
           this.logger.warn(
@@ -480,6 +618,11 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
+    // Close WebSocket connection if active
+    if (aiSession.processingAudio) {
+      this.ariWebSocketGateway.closeCallConnection(callId);
+    }
+
     this.aiSessions.delete(callId);
   }
 
@@ -517,10 +660,36 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  private async createWebSocketExternalMediaChannel(
+    callId: string,
+  ): Promise<string | undefined> {
+    const wsPort = this.configService.get<number>('WEBSOCKET_PORT', 9090);
+    const wsUrl = `ws://localhost:${wsPort}/?callId=${callId}`;
+
+    const response = await this.ariRequest<any>(
+      'post',
+      '/channels/externalMedia',
+      {
+        app: this.getAriApp(),
+        channelId: `extmedia-${callId}`,
+        external_host: wsUrl,
+        format: 'slin', // 8kHz, 16-bit signed PCM mono
+        direction: 'both',
+        transport: 'ws', // WebSocket transport
+      },
+    );
+
+    this.logger.log(
+      `Created WebSocket externalMedia channel for call=${callId} url=${wsUrl}`,
+    );
+    return response?.id;
+  }
+
   private async createExternalMediaChannel(
     callId: string,
     externalHost: string,
   ): Promise<string | undefined> {
+    // Keep this method for backward compatibility
     const response = await this.ariRequest<any>(
       'post',
       '/channels/externalMedia',
