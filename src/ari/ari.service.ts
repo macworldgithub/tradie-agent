@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
 import { VoiceAgentService } from '../voice-agent/voice-agent.service';
+import { AriRtpMediaService } from './ari-rtp-media.service';
 
 type AriEvent = {
   type?: string;
@@ -46,6 +47,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly voiceAgentService: VoiceAgentService,
+    private readonly ariRtpMediaService: AriRtpMediaService,
   ) {
     this.ariHttpClient = axios.create({
       timeout: 10000,
@@ -78,6 +80,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       app: this.getAriApp(),
       ariUrl: this.getAriBaseUrl(),
       activeSessions: this.sessions.size,
+      rtp: this.ariRtpMediaService.getHealth(),
       lastEventAt: this.lastEventAt,
       timestamp: new Date().toISOString(),
     };
@@ -184,6 +187,8 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
         createdAt: new Date().toISOString(),
       });
 
+      this.ariRtpMediaService.registerCallSession(callId);
+
       this.logger.log(
         `ARI bridge ready. call=${callId} bridge=${bridgeId} extMedia=${externalMediaChannelId || 'none'}`,
       );
@@ -238,6 +243,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       await this.safeHangupChannel(session.externalMediaChannelId);
     }
     await this.safeDestroyBridge(session.bridgeId);
+    this.ariRtpMediaService.unregisterCallSession(callId);
     this.sessions.delete(callId);
   }
 
