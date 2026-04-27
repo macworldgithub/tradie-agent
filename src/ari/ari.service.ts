@@ -680,6 +680,8 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     const wsPort = this.configService.get<number>('WEBSOCKET_PORT', 9090);
     const wsHost = `localhost:${wsPort}`;
 
+    this.logger.log(`[${callId}] Creating externalMedia with host=${wsHost}`);
+
     const response = await this.ariRequest<any>(
       'post',
       '/channels/externalMedia',
@@ -694,7 +696,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     );
 
     this.logger.log(
-      `Created WebSocket externalMedia channel for call=${callId} host=${wsHost}`,
+      `Created WebSocket externalMedia channel for call=${callId} host=${wsHost} channelId=${response?.id}`,
     );
     return response?.id;
   }
