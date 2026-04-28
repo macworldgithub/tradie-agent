@@ -13,5 +13,6 @@ import { Customer, CustomerSchema } from './Schema/customer.schema';
   ],
   controllers: [VoiceController],
   providers: [VoiceService, VoiceGateway],
+  exports: [VoiceService],
 })
 export class VoiceModule {}
