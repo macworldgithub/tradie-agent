@@ -573,14 +573,24 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
           // Convert base64 ulaw to buffer
           const ulawBuffer = Buffer.from(event.delta, 'base64');
 
+          this.logger.log(
+            `[${callId}] AI speaking: ${ulawBuffer.length} bytes of audio`,
+          );
+
           // If WebSocket is active, send via WebSocket, otherwise use RTP
           if (aiSession.processingAudio) {
             // Convert ulaw to slin for WebSocket
             const slinBuffer = this.convertUlawToSlin(ulawBuffer);
             this.ariWebSocketGateway.sendAudioToCall(callId, slinBuffer);
+            this.logger.log(
+              `[${callId}] Sent audio via WebSocket: ${slinBuffer.length} bytes`,
+            );
           } else {
             // Use RTP for backward compatibility
             this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
+            this.logger.log(
+              `[${callId}] Sent audio via RTP: ${ulawBuffer.length} bytes`,
+            );
           }
           break;
         case 'error':
