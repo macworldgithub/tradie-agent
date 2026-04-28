@@ -5,9 +5,10 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import axios, { AxiosInstance } from 'axios';
+import axios from 'axios';
+import type { AxiosInstance } from 'axios';
 import WebSocket from 'ws';
-import { VoiceAgentService } from '../voice-agent/voice-agent.service';
+import { VoiceService } from '../voice/voice.service';
 import { AriRtpMediaService } from './ari-rtp-media.service';
 import { AriWebSocketGateway } from './ari-websocket.gateway';
 
@@ -58,9 +59,9 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly voiceAgentService: VoiceAgentService,
     private readonly ariRtpMediaService: AriRtpMediaService,
     private readonly ariWebSocketGateway: AriWebSocketGateway,
+    private readonly voiceService: VoiceService,
   ) {
     this.ariHttpClient = axios.create({
       timeout: 10000,
@@ -192,18 +193,18 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     let aiInstructions = this.getDefaultAiInstructions();
 
     try {
-      const aiContext = await this.voiceAgentService.handleIncomingCall({
+      const voiceContext = await this.voiceService.handleIncomingCall({
         call_id: callId,
         caller_number: callerNumber,
         called_number: calledNumber,
       });
 
-      if (aiContext?.success && typeof aiContext.ai_instructions === 'string') {
-        aiInstructions = aiContext.ai_instructions;
+      if (voiceContext?.success) {
+        this.logger.log(`Voice Service session created for call=${callId}`);
       }
     } catch (error) {
       this.logger.warn(
-        `Failed to build AI call context for ${callId}: ${(error as Error).message}`,
+        `Failed to create Voice Service session for ${callId}: ${(error as Error).message}`,
       );
     }
 
@@ -503,16 +504,6 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
               create_response: true,
               interrupt_response: true,
             },
-          },
-        }),
-      );
-
-      ws.send(
-        JSON.stringify({
-          type: 'response.create',
-          response: {
-            instructions:
-              'Greet the caller briefly and ask how you can help today.',
           },
         }),
       );

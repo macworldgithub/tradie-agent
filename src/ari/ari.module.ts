@@ -4,10 +4,10 @@ import { AriController } from './ari.controller';
 import { AriService } from './ari.service';
 import { AriRtpMediaService } from './ari-rtp-media.service';
 import { AriWebSocketGateway } from './ari-websocket.gateway';
-import { VoiceAgentModule } from '../voice-agent/voice-agent.module';
+import { VoiceModule } from '../voice/voice.module';
 
 @Module({
-  imports: [ConfigModule, VoiceAgentModule],
+  imports: [ConfigModule, VoiceModule],
   controllers: [AriController],
   providers: [AriService, AriRtpMediaService, AriWebSocketGateway],
   exports: [AriService, AriRtpMediaService, AriWebSocketGateway],
