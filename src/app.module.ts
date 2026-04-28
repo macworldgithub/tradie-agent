@@ -8,6 +8,7 @@ import { LeadModule } from './lead/lead.module';
 import { PbxModule } from './pbx/pbx.module';
 import { VoiceAgentModule } from './voice-agent/voice-agent.module';
 import { AriModule } from './ari/ari.module';
+import { Customer, CustomerSchema } from './voice/Schema/customer.schema';
 
 @Module({
   imports: [
@@ -21,8 +22,8 @@ import { AriModule } from './ari/ari.module';
     }),
     MongooseModule.forFeature([
       {
-        name: 'Customer',
-        schema: require('./voice/Schema/customer.schema').CustomerSchema,
+        name: Customer.name,
+        schema: CustomerSchema,
       },
     ]),
     VoiceModule,
