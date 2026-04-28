@@ -16,9 +16,15 @@ import { AriModule } from './ari/ari.module';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        uri: config.get('MONGO_URI'),
+        uri: config.get<string>('MONGO_URI'),
       }),
     }),
+    MongooseModule.forFeature([
+      {
+        name: 'Customer',
+        schema: require('./voice/Schema/customer.schema').CustomerSchema,
+      },
+    ]),
     VoiceModule,
     AuthModule,
     TradieModule,
