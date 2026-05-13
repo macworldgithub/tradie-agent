@@ -4,15 +4,24 @@ import { VoiceController } from './voice.controller';
 import { VoiceService } from './voice.service';
 import { VoiceGateway } from './voice.gateway';
 import { Customer, CustomerSchema } from './Schema/customer.schema';
+import { DidsModule } from '../dids/dids.module';
+import { TradiesModule } from '../tradies/tradies.module';
+import { SessionService } from '../session/session.service';
+import { CallsModule } from '../calls/calls.module';
+import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: Customer.name, schema: CustomerSchema },
     ]),
+    DidsModule,
+    TradiesModule,
+    CallsModule,
+    CommonModule,
   ],
   controllers: [VoiceController],
-  providers: [VoiceService, VoiceGateway],
+  providers: [VoiceService, VoiceGateway, SessionService],
   exports: [VoiceService],
 })
 export class VoiceModule {}

@@ -922,11 +922,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
+import axios from 'axios';
 import { ClientRequest } from 'http';
 import { Model } from 'mongoose';
 import { Socket } from 'net';
 import { TLSSocket } from 'tls';
 import WebSocket from 'ws';
+import { DidsService } from '../dids/dids.service';
+import { TradiesService } from '../tradies/tradies.service';
+import { SessionService } from '../session/session.service';
+import { CallsService } from '../calls/calls.service';
+import { NotificationService } from 'src/common/notification.service';
+import { VoiceMlBuilder } from './voiceml.builder';
 import { Customer, CustomerDocument } from './Schema/customer.schema';
 
 /**
@@ -947,6 +954,9 @@ interface RealtimeSession {
   firstResponseCreatedAtMs: number | null;
   firstAudioDeltaLogged: boolean;
   processedFunctionCallIds: Set<string>;
+  enfonicaCallId?: string | null;
+  customerNumber?: string | null;
+  didNumber?: string | null;
 }
 
 interface FunctionCallPayload {
@@ -991,37 +1001,312 @@ export class VoiceService {
     private readonly config: ConfigService,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
+    private readonly didsService: DidsService,
+    private readonly tradiesService: TradiesService,
+    private readonly sessionService: SessionService,
+    private readonly callsService: CallsService,
+    private readonly notificationService: NotificationService,
   ) {}
+
+  async handleIncomingWebhook(
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const callSid = this.getStringValue(payload, [
+      'callSid',
+      'CallSid',
+      'call_id',
+      'callId',
+    ]);
+    const callerIdRaw = this.getStringValue(payload, [
+      'from',
+      'From',
+      'callerId',
+      'callerID',
+    ]);
+    const didRaw = this.getStringValue(payload, ['to', 'To', 'did', 'DID']);
+    const timestamp = new Date().toISOString();
+
+    this.logger.log(
+      `Incoming webhook callSid=${callSid ?? 'unknown'} callerID=${callerIdRaw ?? 'unknown'} did=${didRaw ?? 'unknown'} timestamp=${timestamp}`,
+    );
+
+    if (!callSid || !callerIdRaw || !didRaw) {
+      return VoiceMlBuilder.say(
+        'We could not process your call at this time. Please try again later.',
+      );
+    }
+
+    const callerID = this.ensureE164CallerId(callerIdRaw);
+
+    this.sessionService.createSession({
+      callSid,
+      callerID,
+      did: didRaw,
+      timestamp,
+    });
+
+    const didRecord = await this.didsService.findByDidNumber(didRaw);
+    if (!didRecord) {
+      this.logger.warn(`DID lookup failed for did=${didRaw}`);
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
+    }
+
+    const tradie = await this.tradiesService.findById(
+      didRecord.assignedTradieId,
+    );
+    if (!tradie) {
+      this.logger.warn(
+        `Tradie lookup failed for did=${didRaw} tradieId=${didRecord.assignedTradieId}`,
+      );
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
+    }
+
+    this.logger.log(
+      `DID lookup succeeded for did=${didRaw} tradie=${tradie.phoneNumber}`,
+    );
+
+    if (!this.isE164(tradie.phoneNumber)) {
+      this.logger.warn(
+        `Tradie phone number is not E164. tradie=${tradie.phoneNumber}`,
+      );
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
+    }
+
+    this.sessionService.updateSession(callSid, {
+      tradieNumber: tradie.phoneNumber,
+      companyId: didRecord.companyId,
+    });
+
+    const nextUri = this.buildAbsoluteUrl('/voice/callback');
+    if (!nextUri) {
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
+    }
+    return VoiceMlBuilder.dialTradie({
+      callerId: callerID,
+      tradieNumber: tradie.phoneNumber,
+      nextUri,
+      timeoutSeconds: 33,
+    });
+  }
+
+  async handleCallbackWebhook(
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const callSid = this.getStringValue(payload, [
+      'callSid',
+      'CallSid',
+      'call_id',
+      'callId',
+    ]);
+    const callStatusRaw = this.getStringValue(payload, [
+      'callStatus',
+      'CallStatus',
+      'status',
+    ]);
+
+    this.logger.log(
+      `Callback webhook callSid=${callSid ?? 'unknown'} callStatus=${callStatusRaw ?? 'unknown'}`,
+    );
+
+    if (callSid && callStatusRaw) {
+      this.sessionService.updateCallStatus(callSid, callStatusRaw);
+    }
+
+    const session = callSid
+      ? this.sessionService.getSession(callSid)
+      : undefined;
+    const callerIdRaw =
+      session?.callerID ||
+      this.getStringValue(payload, ['from', 'From', 'callerId', 'callerID']) ||
+      '';
+    const did =
+      session?.did ||
+      this.getStringValue(payload, ['to', 'To', 'did', 'DID']) ||
+      '';
+
+    const callStatus = (callStatusRaw || '').toUpperCase();
+    if (callStatus !== 'COMPLETED') {
+      await this.triggerAriFallback(callSid, callerIdRaw, did);
+    }
+
+    return VoiceMlBuilder.say(
+      'Please hold while we connect you to our virtual assistant.',
+    );
+  }
+
+  private async triggerAriFallback(
+    callSid: string | undefined,
+    callerIdRaw: string,
+    did: string,
+  ): Promise<void> {
+    const ariUrl = this.config.get<string>('ASTERISK_ARI_URL');
+    const username =
+      this.config.get<string>('ASTERISK_ARI_USER') ||
+      this.config.get<string>('ASTERISK_ARI_USERNAME');
+    const password =
+      this.config.get<string>('ASTERISK_ARI_PASS') ||
+      this.config.get<string>('ASTERISK_ARI_PASSWORD');
+    const context = this.config.get<string>('ASTERISK_CONTEXT');
+    const extension = this.config.get<string>('ASTERISK_EXTENSION');
+    const app = this.config.get<string>('ASTERISK_ARI_APP');
+
+    if (!ariUrl || !username || !password) {
+      this.logger.error(
+        `ARI fallback skipped due to missing credentials callSid=${callSid ?? 'unknown'}`,
+      );
+      return;
+    }
+
+    if (!extension || !context) {
+      this.logger.error(
+        `ARI fallback skipped due to missing context/extension callSid=${callSid ?? 'unknown'}`,
+      );
+      return;
+    }
+
+    const callerId = this.ensureE164CallerId(callerIdRaw);
+    const endpoint = `Local/${extension}@${context}`;
+    const url = `${ariUrl.replace(/\/+$/, '')}/ari/channels`;
+    const params: Record<string, string> = {
+      endpoint,
+      callerId,
+      timeout: '25',
+      variables: JSON.stringify({
+        CALLER_ID: callerId,
+        DID: did,
+      }),
+    };
+
+    if (app) {
+      params.app = app;
+    }
+
+    try {
+      const response = await axios.post(url, null, {
+        auth: { username, password },
+        params,
+      });
+
+      this.logger.log(
+        `Fallback triggered callSid=${callSid ?? 'unknown'} callerID=${callerId} did=${did} ariStatus=${response.status}`,
+      );
+    } catch (error) {
+      const status = (error as { response?: { status?: number } }).response
+        ?.status;
+      this.logger.error(
+        `Fallback trigger failed callSid=${callSid ?? 'unknown'} callerID=${callerId} did=${did} ariStatus=${status ?? 'unknown'}`,
+      );
+    }
+  }
+
+  private buildAbsoluteUrl(path: string): string {
+    const baseUrl = this.config.get<string>('BASE_URL');
+    if (!baseUrl) {
+      this.logger.error('BASE_URL is not set; cannot build NextUri.');
+      return '';
+    }
+
+    const normalizedBase = baseUrl.replace(/\/+$/, '');
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${normalizedBase}${normalizedPath}`;
+  }
+
+  private ensureE164CallerId(value: string): string {
+    if (this.isE164(value)) return value;
+    const fallback = this.config.get<string>('DEFAULT_CALLER_ID') || '';
+    if (this.isE164(fallback)) {
+      this.logger.warn(
+        `CallerID invalid, using DEFAULT_CALLER_ID instead. callerID=${value}`,
+      );
+      return fallback;
+    }
+    this.logger.warn(`CallerID invalid and DEFAULT_CALLER_ID missing.`);
+    return value;
+  }
+
+  private isE164(value: string): boolean {
+    return /^\+[1-9]\d{7,14}$/.test(value);
+  }
+
+  private getStringValue(
+    payload: Record<string, unknown>,
+    keys: string[],
+  ): string | undefined {
+    for (const key of keys) {
+      const value = payload[key];
+      if (typeof value === 'string' && value.trim().length > 0) {
+        return value.trim();
+      }
+    }
+    return undefined;
+  }
 
   /**
    * Handle incoming Asterisk call and create voice session
    */
-  async handleIncomingCall(callData: {
-    call_id: string;
-    caller_number: string;
-    called_number: string;
-  }) {
-    this.logger.log(`Voice Service handling call: ${callData.call_id}`);
+  async handleIncomingCall(
+    channel: {
+      id?: string;
+      caller?: { number?: string };
+      connected?: { number?: string };
+      call_id?: string;
+      caller_number?: string;
+      called_number?: string;
+    },
+    enfonicaCallId: string | null,
+    customerNumber: string | null,
+    didNumber: string | null,
+  ) {
+    const callId = channel.id || channel.call_id || '';
+    const callerNumber =
+      customerNumber || channel.caller?.number || channel.caller_number || null;
+    const calledNumber =
+      didNumber || channel.connected?.number || channel.called_number || null;
+
+    if (!callId) {
+      this.logger.error('Voice Service handling call: missing call_id');
+      return {
+        success: false,
+        error: 'Missing call_id',
+      };
+    }
+
+    this.logger.log(`Voice Service handling call: ${callId}`);
 
     try {
       // Create realtime session for this call
-      await this.createRealtimeSession(callData.call_id, (event) => {
-        this.logger.log(`[${callData.call_id}] Voice event: ${event.type}`);
+      await this.createRealtimeSession(callId, (event) => {
+        this.logger.log(`[${callId}] Voice event: ${event.type}`);
 
         // Handle voice events and send audio back to ARI
         if (event.type === 'audio-delta') {
           // Send audio to ARI WebSocket for phone playback
-          this.sendAudioToAri(callData.call_id, event.delta);
+          this.sendAudioToAri(callId, event.delta);
         }
       });
 
+      const session = this.sessions.get(callId);
+      if (session) {
+        session.enfonicaCallId = enfonicaCallId;
+        session.customerNumber = callerNumber;
+        session.didNumber = calledNumber;
+      }
+
       // Trigger greeting
-      this.triggerGreeting(callData.call_id);
+      this.triggerGreeting(callId);
 
       return {
         success: true,
         message: 'Voice session created successfully',
-        call_id: callData.call_id,
+        call_id: callId,
       };
     } catch (error) {
       this.logger.error(`Error in Voice call handling: ${error.message}`);
@@ -1518,20 +1803,74 @@ export class VoiceService {
           `[${sessionId}] Saving Booking to MongoDB for: ${args.name}`,
         );
 
+        const serviceType = args.serviceType ?? args.service_type;
+        const problemDescription =
+          args.problemDescription ?? args.problem_description;
+        const preferredTime = args.preferredTime ?? args.preferred_time;
+        const summaryText = args.summary || `Tradie Booking: ${serviceType}`;
+
         const customer = await this.customerModel.create({
           name: args.name,
           phone: args.phone,
           address: args.address,
           urgency: args.urgency,
-          serviceType: args.service_type,
-          problemDescription: args.problem_description,
-          preferredTime: args.preferred_time,
-          summary: `Tradie Booking: ${args.service_type}`,
+          serviceType,
+          problemDescription,
+          preferredTime,
+          summary: summaryText,
         });
 
         this.logger.log(
           `[${sessionId}] SUCCESS: Customer saved with ID ${customer._id}`,
         );
+
+        const enfonicaCallId = session.enfonicaCallId;
+        if (enfonicaCallId) {
+          await this.callsService.updateCallSummary(enfonicaCallId, {
+            name: args.name,
+            phone: args.phone,
+            address: args.address,
+            urgency: args.urgency,
+            serviceType,
+            problemDescription,
+            preferredTime,
+            summary: summaryText,
+          });
+
+          const callRecord =
+            await this.callsService.findByEnfonicaCallId(enfonicaCallId);
+          if (callRecord?.tradieId) {
+            const tradie = await this.tradiesService.findById(
+              String(callRecord.tradieId),
+            );
+            const preference = tradie?.notificationPreference;
+            if (
+              tradie?.email &&
+              (preference === 'email' || preference === 'both')
+            ) {
+              const customerNumber = session.customerNumber || '';
+              const didNumber = session.didNumber || '';
+              const createdAt = (callRecord as any)?.createdAt || '';
+              await this.notificationService.sendEmail(
+                tradie.email,
+                'Missed Call Summary',
+                `Customer Number: ${customerNumber}
+DID Number: ${didNumber}
+Time: ${createdAt}
+Summary: ${summaryText}
+
+Full Details:
+Name: ${args.name}
+Phone: ${args.phone}
+Address: ${args.address}
+Service Type: ${serviceType}
+Urgency: ${args.urgency}
+Problem: ${problemDescription}
+Preferred Time: ${preferredTime}`,
+              );
+            }
+          }
+        }
 
         session.ws.send(
           JSON.stringify({

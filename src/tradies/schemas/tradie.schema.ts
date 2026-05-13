@@ -11,8 +11,14 @@ export class Tradie {
   @Prop({ required: true })
   phoneNumber: string;
 
+  @Prop()
+  email?: string;
+
   @Prop({ required: true })
   companyId: string;
+
+  @Prop({ enum: ['email', 'sms', 'both'], default: 'email' })
+  notificationPreference: string;
 
   @Prop({ default: 'active' })
   status: string; // 'active' | 'inactive'

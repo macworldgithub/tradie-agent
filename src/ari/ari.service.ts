@@ -21,10 +21,15 @@ type AriEvent = {
       number?: string;
       name?: string;
     };
+    connected?: {
+      number?: string;
+      name?: string;
+    };
     dialplan?: {
       exten?: string;
       context?: string;
     };
+    channelvars?: Record<string, string>;
   };
   application?: string;
 };
@@ -163,6 +168,12 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     const channelId = event.channel?.id;
     const callerNumber = event.channel?.caller?.number || 'unknown';
     const calledNumber = event.channel?.dialplan?.exten || 'unknown';
+    const enfonicaCallId =
+      event.channel?.channelvars?.['PJSIP_HEADER(recv,X-Call-Id)'] ||
+      event.channel?.channelvars?.['X-Call-Id'] ||
+      null;
+    const customerNumber = event.channel?.caller?.number || null;
+    const didNumber = event.channel?.connected?.number || null;
 
     if (!channelId) {
       this.logger.warn('StasisStart received without channel ID');
@@ -193,11 +204,12 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     let aiInstructions = this.getDefaultAiInstructions();
 
     try {
-      const voiceContext = await this.voiceService.handleIncomingCall({
-        call_id: callId,
-        caller_number: callerNumber,
-        called_number: calledNumber,
-      });
+      const voiceContext = await this.voiceService.handleIncomingCall(
+        event.channel || { id: callId },
+        enfonicaCallId,
+        customerNumber,
+        didNumber,
+      );
 
       if (voiceContext?.success) {
         this.logger.log(`Voice Service session created for call=${callId}`);

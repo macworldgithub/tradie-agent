@@ -22,4 +22,30 @@ export class CallsService {
       .lean()
       .exec();
   }
+
+  async updateCallStatus(
+    enfonicaCallId: string,
+    status: 'initiated' | 'no_answer' | 'completed',
+  ): Promise<void> {
+    await this.callLogModel
+      .findOneAndUpdate({ enfonicaCallId }, { status }, { new: false })
+      .exec();
+  }
+
+  async updateCallSummary(
+    enfonicaCallId: string,
+    summary: Record<string, any>,
+  ): Promise<void> {
+    await this.callLogModel
+      .findOneAndUpdate(
+        { enfonicaCallId },
+        { summary, status: 'completed' },
+        { new: false },
+      )
+      .exec();
+  }
+
+  async findByEnfonicaCallId(enfonicaCallId: string): Promise<CallLog | null> {
+    return this.callLogModel.findOne({ enfonicaCallId }).lean().exec();
+  }
 }

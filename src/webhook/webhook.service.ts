@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Types } from 'mongoose';
 import { CallsService } from '../calls/calls.service';
 import { DidsService } from '../dids/dids.service';
 import { TradiesService } from '../tradies/tradies.service';
-import { AriService } from '../ari/ari.service';
 
 @Injectable()
 export class WebhookService {
@@ -12,14 +12,18 @@ export class WebhookService {
     private readonly didsService: DidsService,
     private readonly tradiesService: TradiesService,
     private readonly callsService: CallsService,
-    private readonly ariService: AriService,
   ) {}
 
-  async handleIncoming(payload: {
-    from: string;
-    to: string;
-    callStatus?: string;
-  }) {
+  async handleIncoming(
+    payload: {
+      name?: string;
+      from: string;
+      to: string;
+      callStatus?: string;
+    },
+    enfonicaCallIdFromQuery?: string,
+  ) {
+    const enfonicaCallId = payload.name;
     const callerNumber = payload.from;
     const didNumber = payload.to;
     const callStatus = payload.callStatus;
@@ -31,6 +35,7 @@ export class WebhookService {
         this.logger.warn(`No DID mapping for ${didNumber}`);
         // Log and return empty response
         await this.callsService.create({
+          enfonicaCallId,
           callerNumber,
           didNumber,
           tradieNumber: undefined,
@@ -41,55 +46,74 @@ export class WebhookService {
       }
 
       const tradie = await this.tradiesService.findById(did.assignedTradieId);
-      const tradieNumber = tradie?.phoneNumber;
+      const tradieNumber = did.tradieNumber || tradie?.phoneNumber;
+      const tradieId = Types.ObjectId.isValid(did.assignedTradieId)
+        ? new Types.ObjectId(did.assignedTradieId)
+        : undefined;
 
       // Log initiated call
       await this.callsService.create({
+        enfonicaCallId,
         callerNumber,
         didNumber,
+        tradieId,
         tradieNumber,
+        status: 'initiated',
         callStatus: 'INITIATED',
         fallbackUsed: false,
       });
 
-      if (tradieNumber) {
-        await this.ariService.originateTradieCall(
-          tradieNumber,
-          callerNumber,
-          didNumber,
-        );
-      } else {
+      if (!tradieNumber) {
         this.logger.warn(`No tradie number found for DID ${didNumber}`);
+        return { type: 'ack' };
       }
 
-      return { type: 'ack' };
+      const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Call
+    TimeoutSeconds="25"
+    NextUri="/webhook/call?enfonicaCallId=${enfonicaCallId}"
+    Strategy="simultaneous">
+    ${tradieNumber}
+  </Call>
+</Response>`;
+      return { type: 'voiceml', body: voiceML };
     }
 
     // If callStatus exists handle fallback conditions
     const status = callStatus;
-    const fallbackStatuses = ['NOT_ANSWERED', 'BUSY', 'FAILED'];
-    let fallbackUsed = false;
+    const queryEnfonicaCallId = enfonicaCallIdFromQuery;
 
-    if (fallbackStatuses.includes(status)) {
-      this.logger.log(
-        `Call to tradie failed with status=${status}. Triggering ARI fallback.`,
-      );
-      try {
-        await this.ariService.handleFallbackCall(callerNumber, didNumber);
-        fallbackUsed = true;
-      } catch (err) {
-        this.logger.error('ARI fallback failed', err?.message || err);
+    if (status === 'COMPLETED') {
+      if (queryEnfonicaCallId) {
+        await this.callsService.updateCallStatus(
+          queryEnfonicaCallId,
+          'completed',
+        );
       }
+      return { type: 'voiceml', body: '<Response/>' };
     }
 
-    // Persist call result
-    await this.callsService.create({
-      callerNumber,
-      didNumber,
-      tradieNumber: undefined,
-      callStatus: status,
-      fallbackUsed,
-    });
+    const fallbackStatuses = ['NOT_ANSWERED', 'BUSY', 'FAILED'];
+    if (fallbackStatuses.includes(status)) {
+      if (queryEnfonicaCallId) {
+        await this.callsService.updateCallStatus(
+          queryEnfonicaCallId,
+          'no_answer',
+        );
+      }
+
+      const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Please hold, connecting you to our assistant.</Say>
+  <Call>
+    <Endpoint>sip:ai-bridge@127.0.0.1:5060?X-Call-Id=${encodeURIComponent(
+      queryEnfonicaCallId || '',
+    )}</Endpoint>
+  </Call>
+</Response>`;
+      return { type: 'voiceml', body: voiceML };
+    }
 
     return { type: 'ack' };
   }

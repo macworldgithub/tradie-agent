@@ -1,4 +1,4 @@
-import { Body, Controller, Header, Post } from '@nestjs/common';
+import { Body, Controller, Header, Post, Query } from '@nestjs/common';
 import { WebhookService } from './webhook.service';
 import { WebhookCallDto } from './dtos/webhook-call.dto';
 
@@ -8,8 +8,14 @@ export class WebhookController {
 
   @Post('call')
   @Header('Content-Type', 'application/xml')
-  async handleCall(@Body() body: WebhookCallDto) {
-    const res = await this.webhookService.handleIncoming(body as any);
+  async handleCall(
+    @Body() body: WebhookCallDto,
+    @Query('enfonicaCallId') enfonicaCallId?: string,
+  ) {
+    const res = await this.webhookService.handleIncoming(
+      body as any,
+      enfonicaCallId,
+    );
     if (res.type === 'voiceml') {
       return res.body;
     }

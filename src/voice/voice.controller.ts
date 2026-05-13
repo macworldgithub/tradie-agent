@@ -1,11 +1,19 @@
-import { Controller } from '@nestjs/common';
+import { Body, Controller, Header, Post } from '@nestjs/common';
 import { VoiceService } from './voice.service';
 
 @Controller('voice')
 export class VoiceController {
   constructor(private voiceService: VoiceService) {}
 
-  // The voice agent now operates entirely via WebSocket (Socket.IO gateway).
-  // REST endpoints are no longer needed for the realtime flow.
-  // Keeping this controller as a placeholder for potential future REST APIs.
+  @Post('incoming')
+  @Header('Content-Type', 'application/xml')
+  async incoming(@Body() body: Record<string, unknown>): Promise<string> {
+    return this.voiceService.handleIncomingWebhook(body);
+  }
+
+  @Post('callback')
+  @Header('Content-Type', 'application/xml')
+  async callback(@Body() body: Record<string, unknown>): Promise<string> {
+    return this.voiceService.handleCallbackWebhook(body);
+  }
 }

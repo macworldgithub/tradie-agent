@@ -8,6 +8,9 @@ export class Did {
   @Prop({ required: true, unique: true })
   didNumber: string;
 
+  @Prop()
+  tradieNumber?: string;
+
   @Prop({ required: true })
   companyId: string;
 
