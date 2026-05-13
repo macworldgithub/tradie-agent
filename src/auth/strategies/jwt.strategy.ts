@@ -9,7 +9,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('JWT_SECRET')!,
+      secretOrKey: config.get<string>('JWT_ACCESS_SECRET')!,
     });
   }
 
@@ -17,7 +17,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
    * Called automatically after JWT is verified.
    * Whatever is returned here is attached to `req.user`.
    */
-  async validate(payload: { sub: string; email: string }) {
-    return { userId: payload.sub, email: payload.email };
+  async validate(payload: { sub: string; email: string; companyId?: string }) {
+    console.log("payload", payload);
+    return {
+      userId: payload.sub,
+      email: payload.email,
+      companyId: payload.companyId || payload.sub,
+    };
   }
 }

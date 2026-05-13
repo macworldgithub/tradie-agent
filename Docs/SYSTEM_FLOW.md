@@ -1,5 +1,19 @@
 # System Flow Documentation
 
+## Onboarding Flow
+
+1. Company calls POST /api/auth/register with: customerName, companyName, email, password, trade, mobileNumber
+2. On success, company receives JWT token.
+3. Company calls POST /tradies with: name, phoneNumber, email, notificationPreference.
+   - Note: Authorization: Bearer <token> header is required. companyId is automatically read from the JWT.
+4. On success, tradieId is returned.
+5. Company calls GET /tradies/mine to get a list of their tradies for the DID assignment dropdown.
+6. Company calls POST /dids with: didNumber, assignedTradieId, tradieNumber (optional).
+   - Note: Authorization: Bearer <token> header is required. companyId is automatically read from the JWT.
+7. On success, DID is mapped and ready to receive calls.
+8. Company configures their Enfonica DID webhook to: https://tradie.omnisuiteai.com/webhook/call
+9. System is live — any call to the DID will route to the tradie
+
 ## webhook/
 
 ### Purpose

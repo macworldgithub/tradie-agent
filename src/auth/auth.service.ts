@@ -25,15 +25,17 @@ export class AuthService {
   ) {}
 
   private async signToken(userId: string, email: string) {
-    const payload = { sub: userId, email };
+    const payload = { sub: userId, companyId: userId, email };
     return this.jwtService.signAsync(payload, {
-      secret: this.configService.get('JWT_SECRET'),
+      secret: this.configService.get('JWT_ACCESS_SECRET'),
       expiresIn: '7d',
     });
   }
 
   async register(dto: RegisterDto) {
-    const existing = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const existing = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     if (existing) throw new BadRequestException('Email already registered');
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
@@ -50,13 +52,16 @@ export class AuthService {
     await this.mailService.sendOtpEmail(dto.email, otp);
 
     return {
-      message: 'User registered successfully. Please verify your email using the OTP sent.',
+      message:
+        'User registered successfully. Please verify your email using the OTP sent.',
       userId: newUser._id,
     };
   }
 
   async login(dto: LoginDto) {
-    const user = await this.userModel.findOne({ email: dto.email.toLowerCase() });
+    const user = await this.userModel.findOne({
+      email: dto.email.toLowerCase(),
+    });
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
     const valid = await bcrypt.compare(dto.password, user.password);

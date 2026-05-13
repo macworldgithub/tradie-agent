@@ -32,20 +32,8 @@ export class User {
   @Prop({ required: true })
   mobileNumber: string;
 
-  @Prop({ default: false })
-  wantsGeoNumber: boolean;
-
-  @Prop({ enum: GeoNumberType, default: GeoNumberType.NONE })
-  geoNumberType: GeoNumberType;
-
-  @Prop()
-  portingNumber: string;
-
   @Prop()
   openingHours: string;
-
-  @Prop({ type: Object })
-  paymentDetails: any;
 
   @Prop({ default: false })
   emailVerified: boolean;
