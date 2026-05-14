@@ -477,13 +477,12 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
 
     const model =
       this.configService.get<string>('OPENAI_REALTIME_MODEL') ||
-      'gpt-4o-mini-realtime-preview';
+      'gpt-4o-realtime-preview-2024-12-17';
     const wsUrl = `wss://api.openai.com/v1/realtime?model=${model}`;
 
     const ws = new WebSocket(wsUrl, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'OpenAI-Beta': 'realtime=v1',
       },
     });
 

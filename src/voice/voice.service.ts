@@ -1336,7 +1336,9 @@ export class VoiceService {
     onEvent: (event: any) => void,
   ): Promise<void> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    const model = 'gpt-4o-mini-realtime-preview';
+    const model =
+      this.config.get<string>('OPENAI_REALTIME_MODEL') ||
+      'gpt-4o-realtime-preview-2024-12-17';
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
     const sessionStartedAtMs = Date.now();
 
@@ -1344,7 +1346,6 @@ export class VoiceService {
       const ws = new WebSocket(url, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
-          'OpenAI-Beta': 'realtime=v1',
         },
       });
       this.instrumentClientWebSocketHandshake(
