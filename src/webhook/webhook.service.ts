@@ -28,10 +28,17 @@ export class WebhookService {
     const didNumber = payload.to;
     const callStatus = payload.callStatus;
 
+    console.log('=== WEBHOOK HIT ===');
+    console.log('enfonicaCallId:', enfonicaCallId);
+    console.log('customerNumber:', callerNumber);
+    console.log('didNumber:', didNumber);
+    console.log('callStatus:', callStatus);
+
     if (!callStatus) {
       // First call: lookup DID and return VoiceML to call tradie
       const did = await this.didsService.findByDidNumber(didNumber);
       if (!did) {
+        console.log('=== DID NOT FOUND for:', didNumber);
         this.logger.warn(`No DID mapping for ${didNumber}`);
         // Log and return empty response
         await this.callsService.create({
@@ -45,8 +52,15 @@ export class WebhookService {
         return { type: 'no_mapping' };
       }
 
+      console.log('=== DID LOOKUP ===');
+      console.log('DID found:', JSON.stringify(did));
+
       const tradie = await this.tradiesService.findById(did.assignedTradieId);
       const tradieNumber = did.tradieNumber || tradie?.phoneNumber;
+
+      console.log('=== TRADIE FETCHED ===');
+      console.log('tradieNumber:', tradieNumber);
+      console.log('tradieId:', did.assignedTradieId);
       const tradieId = Types.ObjectId.isValid(did.assignedTradieId)
         ? new Types.ObjectId(did.assignedTradieId)
         : undefined;
@@ -63,6 +77,9 @@ export class WebhookService {
         fallbackUsed: false,
       });
 
+      console.log('=== CALLLOG CREATED ===');
+      console.log('status: initiated');
+
       if (!tradieNumber) {
         this.logger.warn(`No tradie number found for DID ${didNumber}`);
         return { type: 'ack' };
@@ -77,6 +94,9 @@ export class WebhookService {
     ${tradieNumber}
   </Call>
 </Response>`;
+
+      console.log('=== DIALLING TRADIE ===');
+      console.log('VoiceML sent to Enfonica, dialling:', tradieNumber);
       return { type: 'voiceml', body: voiceML };
     }
 
@@ -84,7 +104,13 @@ export class WebhookService {
     const status = callStatus;
     const queryEnfonicaCallId = enfonicaCallIdFromQuery;
 
+    console.log('=== CALLBACK LEG HIT ===');
+    console.log('callStatus:', callStatus);
+    console.log('enfonicaCallId from query:', enfonicaCallIdFromQuery);
+
     if (status === 'COMPLETED') {
+      console.log('=== CALL COMPLETED ===');
+      console.log('Tradie answered, updating CallLog to completed');
       if (queryEnfonicaCallId) {
         await this.callsService.updateCallStatus(
           queryEnfonicaCallId,
@@ -96,6 +122,9 @@ export class WebhookService {
 
     const fallbackStatuses = ['NOT_ANSWERED', 'BUSY', 'FAILED'];
     if (fallbackStatuses.includes(status)) {
+      console.log('=== TRADIE DID NOT ANSWER ===');
+      console.log('Triggering SIP fallback to Asterisk');
+      console.log('SIP URI: sip:ai-bridge@127.0.0.1:5060');
       if (queryEnfonicaCallId) {
         await this.callsService.updateCallStatus(
           queryEnfonicaCallId,

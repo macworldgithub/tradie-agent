@@ -11,12 +11,15 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { TradiesService } from './tradies.service';
 import { CreateTradieDto } from './dtos/create-tradie.dto';
 import { UpdateTradieDto } from './dtos/update-tradie.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @UseGuards(JwtAuthGuard)
+@ApiBearerAuth()
+@ApiTags('Tradies')
 @Controller('tradies')
 export class TradiesController {
   constructor(private readonly tradiesService: TradiesService) {}
