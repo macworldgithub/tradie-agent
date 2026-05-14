@@ -15,27 +15,27 @@ export class WebhookService {
   ) {}
 
   async handleIncoming(
-    payload: {
-      name?: string;
-      from?: string;
-      to?: string;
-      callStatus?: string;
-    },
+    payload: any,
     enfonicaCallIdFromQuery?: string,
-  ) {
-    const enfonicaCallId = payload.name;
-    const callerNumber = payload.from;
-    const didNumber = payload.to;
-    const callStatus = payload.callStatus;
+  ): Promise<{ type: string; body?: string }> {
+    console.log('=== RAW PAYLOAD ===', JSON.stringify(payload));
+
+    // Enfonica sends data nested inside a 'call' object
+    const callData = payload.call || payload;
+
+    const enfonicaCallId = callData.name;
+    const callerNumber = callData.from;
+    const didNumber = callData.to;
+    const callState = callData.state;
 
     console.log('=== WEBHOOK HIT ===');
     console.log('enfonicaCallId:', enfonicaCallId);
     console.log('customerNumber:', callerNumber);
     console.log('didNumber:', didNumber);
-    console.log('callStatus:', callStatus);
-    console.log('RAW PAYLOAD:', JSON.stringify(payload));
+    console.log('callState:', callState);
 
-    if (!callStatus) {
+    // FIRST LEG — inbound call arriving
+    if (callState === 'STARTING' || (!callState && !enfonicaCallIdFromQuery)) {
       if (!callerNumber || !didNumber) {
         this.logger.warn('Missing callerNumber or didNumber in payload');
         return { type: 'ack' };
@@ -62,16 +62,18 @@ export class WebhookService {
         ? new Types.ObjectId(did.assignedTradieId)
         : undefined;
 
-      await this.callsService.create({
-        enfonicaCallId,
-        callerNumber,
-        didNumber,
-        tradieId,
-        tradieNumber,
-        status: 'initiated',
-        callStatus: 'INITIATED',
-        fallbackUsed: false,
-      });
+      if (callerNumber && didNumber) {
+        await this.callsService.create({
+          enfonicaCallId,
+          callerNumber,
+          didNumber,
+          tradieId,
+          tradieNumber,
+          status: 'initiated',
+          callStatus: 'INITIATED',
+          fallbackUsed: false,
+        });
+      }
 
       console.log('=== CALLLOG CREATED ===');
       console.log('status: initiated');
@@ -96,16 +98,17 @@ export class WebhookService {
       return { type: 'voiceml', body: voiceML };
     }
 
-    const status = callStatus;
+    // CALLBACK LEG — callStatus from query param
+    const callStatus = payload.callStatus || callData.callStatus;
     const queryEnfonicaCallId = enfonicaCallIdFromQuery;
 
     console.log('=== CALLBACK LEG HIT ===');
+    console.log('callState:', callState);
     console.log('callStatus:', callStatus);
-    console.log('enfonicaCallId from query:', enfonicaCallIdFromQuery);
+    console.log('enfonicaCallId from query:', queryEnfonicaCallId);
 
-    if (status === 'COMPLETED') {
+    if (callState === 'COMPLETED' || callStatus === 'COMPLETED') {
       console.log('=== CALL COMPLETED ===');
-      console.log('Tradie answered, updating CallLog to completed');
       if (queryEnfonicaCallId) {
         await this.callsService.updateCallStatus(
           queryEnfonicaCallId,
@@ -116,10 +119,12 @@ export class WebhookService {
     }
 
     const fallbackStatuses = ['NOT_ANSWERED', 'BUSY', 'FAILED'];
-    if (fallbackStatuses.includes(status)) {
+    if (
+      fallbackStatuses.includes(callState) ||
+      fallbackStatuses.includes(callStatus)
+    ) {
       console.log('=== TRADIE DID NOT ANSWER ===');
       console.log('Triggering SIP fallback to Asterisk');
-      console.log('SIP URI: sip:ai-bridge@127.0.0.1:5060');
       if (queryEnfonicaCallId) {
         await this.callsService.updateCallStatus(
           queryEnfonicaCallId,

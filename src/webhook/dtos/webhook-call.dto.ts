@@ -1,19 +1,21 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional } from 'class-validator';
 
 export class WebhookCallDto {
   @IsOptional()
-  @IsString()
-  name?: string; // Enfonica call resource name
+  call?: any;
 
   @IsOptional()
-  @IsString()
-  from?: string; // caller number
+  name?: string;
 
   @IsOptional()
-  @IsString()
-  to?: string; // DID number
+  from?: string;
 
   @IsOptional()
-  @IsString()
-  callStatus?: string; // optional, provided on fallback events
+  to?: string;
+
+  @IsOptional()
+  callStatus?: string;
+
+  @IsOptional()
+  state?: string;
 }
