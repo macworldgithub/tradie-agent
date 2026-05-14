@@ -17,8 +17,8 @@ export class WebhookService {
   async handleIncoming(
     payload: {
       name?: string;
-      from: string;
-      to: string;
+      from?: string;
+      to?: string;
       callStatus?: string;
     },
     enfonicaCallIdFromQuery?: string,
@@ -33,22 +33,18 @@ export class WebhookService {
     console.log('customerNumber:', callerNumber);
     console.log('didNumber:', didNumber);
     console.log('callStatus:', callStatus);
+    console.log('RAW PAYLOAD:', JSON.stringify(payload));
 
     if (!callStatus) {
-      // First call: lookup DID and return VoiceML to call tradie
+      if (!callerNumber || !didNumber) {
+        this.logger.warn('Missing callerNumber or didNumber in payload');
+        return { type: 'ack' };
+      }
+
       const did = await this.didsService.findByDidNumber(didNumber);
       if (!did) {
         console.log('=== DID NOT FOUND for:', didNumber);
         this.logger.warn(`No DID mapping for ${didNumber}`);
-        // Log and return empty response
-        await this.callsService.create({
-          enfonicaCallId,
-          callerNumber,
-          didNumber,
-          tradieNumber: undefined,
-          callStatus: 'NO_MAPPING',
-          fallbackUsed: false,
-        });
         return { type: 'no_mapping' };
       }
 
@@ -61,11 +57,11 @@ export class WebhookService {
       console.log('=== TRADIE FETCHED ===');
       console.log('tradieNumber:', tradieNumber);
       console.log('tradieId:', did.assignedTradieId);
+
       const tradieId = Types.ObjectId.isValid(did.assignedTradieId)
         ? new Types.ObjectId(did.assignedTradieId)
         : undefined;
 
-      // Log initiated call
       await this.callsService.create({
         enfonicaCallId,
         callerNumber,
@@ -100,7 +96,6 @@ export class WebhookService {
       return { type: 'voiceml', body: voiceML };
     }
 
-    // If callStatus exists handle fallback conditions
     const status = callStatus;
     const queryEnfonicaCallId = enfonicaCallIdFromQuery;
 
