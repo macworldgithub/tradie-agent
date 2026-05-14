@@ -1,4 +1,5 @@
-import { Body, Controller, Header, Post, Query } from '@nestjs/common';
+import { Body, Controller, Header, Post, Query, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { WebhookService } from './webhook.service';
 import { WebhookCallDto } from './dtos/webhook-call.dto';
 
@@ -11,16 +12,22 @@ export class WebhookController {
   async handleCall(
     @Body() body: WebhookCallDto,
     @Query('enfonicaCallId') enfonicaCallId?: string,
+    @Req() req?: any,
   ) {
+    console.log('=== RAW HEADERS ===');
+    console.log(JSON.stringify(req?.headers));
+    console.log('=== RAW BODY ===');
+    console.log(JSON.stringify(req?.body));
+
     const res = await this.webhookService.handleIncoming(
       body as any,
       enfonicaCallId,
     );
+
     if (res.type === 'voiceml') {
       return res.body;
     }
 
-    // For other cases, return a minimal XML ack
     return `<Response></Response>`;
   }
 }
