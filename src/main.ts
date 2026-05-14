@@ -5,6 +5,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { join } from 'path';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import * as express from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -14,6 +15,7 @@ async function bootstrap() {
   // Enable CORS
   app.enableCors();
 
+  app.use(express.urlencoded({ extended: true }));
   // Global validation pipe for DTOs
   app.useGlobalPipes(
     new ValidationPipe({
