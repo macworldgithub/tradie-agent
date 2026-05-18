@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Types } from 'mongoose';
 import { CallsService } from '../calls/calls.service';
 import { DidsService } from '../dids/dids.service';
@@ -9,6 +10,7 @@ export class WebhookService {
   private readonly logger = new Logger(WebhookService.name);
 
   constructor(
+    private readonly configService: ConfigService,
     private readonly didsService: DidsService,
     private readonly tradiesService: TradiesService,
     private readonly callsService: CallsService,
@@ -54,6 +56,14 @@ export class WebhookService {
       const tradie = await this.tradiesService.findById(did.assignedTradieId);
       const tradieNumber = did.tradieNumber || tradie?.phoneNumber;
 
+      if (!tradieNumber || !tradieNumber.startsWith('+')) {
+        this.logger.error(`Tradie number is not E164 format: ${tradieNumber}`);
+        return {
+          type: 'voiceml',
+          body: `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, this service is temporarily unavailable.</Say></Response>`,
+        };
+      }
+
       console.log('=== TRADIE FETCHED ===');
       console.log('tradieNumber:', tradieNumber);
       console.log('tradieId:', did.assignedTradieId);
@@ -86,7 +96,7 @@ export class WebhookService {
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Call
-    TimeoutSeconds="25"
+    TimeoutSeconds="30"
     NextUri="/webhook/call?enfonicaCallId=${enfonicaCallId}"
     Strategy="simultaneous">
     ${tradieNumber}
@@ -99,7 +109,7 @@ export class WebhookService {
     }
 
     // CALLBACK LEG — callStatus from query param
-    const callStatus = payload.callStatus || callData.callStatus;
+    const callStatus = payload.parameters?.callStatus;
     const queryEnfonicaCallId = enfonicaCallIdFromQuery;
 
     console.log('=== CALLBACK LEG HIT ===');
@@ -132,13 +142,15 @@ export class WebhookService {
         );
       }
 
+      const asteriskHost =
+        this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
+      const encodedCallId = encodeURIComponent(enfonicaCallId);
+
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Please hold, connecting you to our assistant.</Say>
-  <Call>
-    <Endpoint>sip:ai-bridge@127.0.0.1:5060?X-Call-Id=${encodeURIComponent(
-      queryEnfonicaCallId || '',
-    )}</Endpoint>
+  <Call CallerId="${callerNumber}">
+    <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
   </Call>
 </Response>`;
       return { type: 'voiceml', body: voiceML };

@@ -752,21 +752,6 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  async handleFallbackCall(callerNumber: string, didNumber: string) {
-    const endpoint = `${this.getFallbackEndpointPrefix()}${callerNumber}`;
-    this.logger.log(
-      `Originating fallback call via ARI endpoint=${endpoint} caller=${callerNumber} did=${didNumber}`,
-    );
-
-    return this.ariRequest('post', '/channels', {
-      endpoint,
-      app: this.getAriApp(),
-      callerId: didNumber,
-      timeout: '25',
-      appArgs: `${callerNumber},${didNumber},fallback`,
-    });
-  }
-
   private async safeHangupChannel(channelId: string) {
     try {
       await this.ariRequest(
