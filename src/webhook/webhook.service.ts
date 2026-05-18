@@ -108,6 +108,7 @@ export class WebhookService {
 
       console.log('=== DIALLING TRADIE ===');
       console.log('VoiceML sent to Enfonica, dialling:', tradieNumber);
+      console.log('=== VOICEML BEING SENT ===\n', voiceML);
       return { type: 'voiceml', body: voiceML };
     }
 
