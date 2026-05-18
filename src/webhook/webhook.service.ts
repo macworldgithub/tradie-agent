@@ -97,6 +97,7 @@ export class WebhookService {
 <Response>
   <Call
     TimeoutSeconds="30"
+    CallerId="${didNumber}"
     NextUri="/webhook/call?enfonicaCallId=${enfonicaCallId}"
     Strategy="simultaneous">
     ${tradieNumber}
@@ -111,6 +112,7 @@ export class WebhookService {
     // CALLBACK LEG — callStatus from query param
     const callStatus = payload.parameters?.callStatus;
     const queryEnfonicaCallId = enfonicaCallIdFromQuery;
+    const resolvedCallId = queryEnfonicaCallId || enfonicaCallId;
 
     console.log('=== CALLBACK LEG HIT ===');
     console.log('callState:', callState);
@@ -119,11 +121,8 @@ export class WebhookService {
 
     if (callState === 'COMPLETED' || callStatus === 'COMPLETED') {
       console.log('=== CALL COMPLETED ===');
-      if (queryEnfonicaCallId) {
-        await this.callsService.updateCallStatus(
-          queryEnfonicaCallId,
-          'completed',
-        );
+      if (resolvedCallId) {
+        await this.callsService.updateCallStatus(resolvedCallId, 'completed');
       }
       return { type: 'voiceml', body: '<Response/>' };
     }
@@ -135,21 +134,21 @@ export class WebhookService {
     ) {
       console.log('=== TRADIE DID NOT ANSWER ===');
       console.log('Triggering SIP fallback to Asterisk');
-      if (queryEnfonicaCallId) {
-        await this.callsService.updateCallStatus(
-          queryEnfonicaCallId,
-          'no_answer',
-        );
+      if (resolvedCallId) {
+        await this.callsService.updateCallStatus(resolvedCallId, 'no_answer');
       }
 
       const asteriskHost =
         this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
-      const encodedCallId = encodeURIComponent(enfonicaCallId);
+      const resolvedCallId2 = resolvedCallId || enfonicaCallId;
+      const encodedCallId = encodeURIComponent(resolvedCallId2);
+      const safeCallerId =
+        callerNumber && callerNumber.startsWith('+') ? callerNumber : didNumber;
 
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Please hold, connecting you to our assistant.</Say>
-  <Call CallerId="${callerNumber}">
+  <Call CallerId="${safeCallerId}">
     <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
   </Call>
 </Response>`;
