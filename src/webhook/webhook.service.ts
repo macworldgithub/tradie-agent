@@ -100,7 +100,7 @@ export class WebhookService {
   <Call
     TimeoutSeconds="30"
     CallerId="${didNumber}"
-    NextUri="/webhook/call?enfonicaCallId=${enfonicaCallId}"
+    NextUri="/webhook/call?enfonicaCallId=${encodeURIComponent(enfonicaCallId)}"
     Strategy="simultaneous">
     ${tradieNumber}
   </Call>
