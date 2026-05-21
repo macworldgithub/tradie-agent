@@ -1337,7 +1337,7 @@ export class VoiceService {
   ): Promise<void> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     const model =
-      this.config.get<string>('OPENAI_REALTIME_MODEL') || 'gpt-realtime-2';
+      this.config.get<string>('OPENAI_REALTIME_MODEL') || 'gpt-realtime-mini';
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
     const sessionStartedAtMs = Date.now();
 
@@ -1345,6 +1345,7 @@ export class VoiceService {
       const ws = new WebSocket(url, {
         headers: {
           Authorization: `Bearer ${apiKey}`,
+          'OpenAI-Beta': 'realtime=v1',
         },
       });
       this.instrumentClientWebSocketHandshake(
@@ -1364,24 +1365,15 @@ export class VoiceService {
         const sessionUpdate = {
           type: 'session.update',
           session: {
-            type: 'realtime',
-            model,
-            output_modalities: ['text'],
-            audio: {
-              input: {
-                format: {
-                  type: 'audio/pcm',
-                  rate: 24000,
-                },
-                turn_detection: {
-                  type: 'server_vad',
-                  threshold: 0.8,
-                  prefix_padding_ms: 300,
-                  silence_duration_ms: 2000,
-                },
-              },
-            },
+            modalities: ['text'],
             instructions: this.getSystemPrompt(),
+            input_audio_format: 'pcm16',
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.8,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 2000,
+            },
             tools: [this.getSaveBookingTool()],
             tool_choice: 'auto',
           },
