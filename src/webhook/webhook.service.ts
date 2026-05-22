@@ -37,7 +37,8 @@ export class WebhookService {
     console.log('callState:', callState);
 
     // FIRST LEG — inbound call arriving
-    if (callState === 'STARTING' || (!callState && !enfonicaCallIdFromQuery)) {
+    const isCallback = payload.parameters?.action === 'CALL';
+    if (!isCallback && (callState === 'STARTING' || !callState)) {
       if (!callerNumber || !didNumber) {
         this.logger.warn('Missing callerNumber or didNumber in payload');
         return { type: 'ack' };
