@@ -100,7 +100,7 @@ export class WebhookService {
   <Call
     TimeoutSeconds="30"
     CallerId="${didNumber}"
-    NextUri="/webhook/call?enfonicaCallId=${encodeURIComponent(enfonicaCallId)}"
+    NextUri="/webhook/call"
     Strategy="simultaneous">
     ${tradieNumber}
   </Call>
@@ -112,10 +112,10 @@ export class WebhookService {
       return { type: 'voiceml', body: voiceML };
     }
 
-    // CALLBACK LEG — callStatus from query param
+    // CALLBACK LEG — callStatus from query param/body
     const callStatus = payload.parameters?.callStatus;
     const queryEnfonicaCallId = enfonicaCallIdFromQuery;
-    const resolvedCallId = queryEnfonicaCallId || enfonicaCallId;
+    const resolvedCallId = callData.name || queryEnfonicaCallId;
 
     console.log('=== CALLBACK LEG HIT ===');
     console.log('callState:', callState);
