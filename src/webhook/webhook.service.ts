@@ -101,9 +101,7 @@ export class WebhookService {
     TimeoutSeconds="30"
     CallerId="${didNumber}"
     NextUri="/webhook/call"
-    Strategy="simultaneous">
-    ${tradieNumber}
-  </Call>
+    Strategy="simultaneous"><Endpoint>${tradieNumber}</Endpoint></Call>
 </Response>`;
 
       console.log('=== DIALLING TRADIE ===');
