@@ -82,6 +82,7 @@ export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
       this.logger.warn(
         `WebSocket connection without call ID - pending connection ${pendingId}`,
       );
+      this.logger.log(`Pending WS connection stored, url=${url}`);
     } else {
       this.logger.log(`WebSocket connected for call=${callId}`);
       this.wsToCallId.set(client, callId);
@@ -244,6 +245,9 @@ export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
     client: WebSocket,
     data: Buffer,
   ): string | null {
+    this.logger.log(`Pending WS first message raw: ${data.toString()}`);
+    this.logger.log(`Pending WS first message length: ${data.length}`);
+    this.logger.log(`Pending WS message type: ${typeof data}`);
     let message: any;
     try {
       message = JSON.parse(data.toString());
