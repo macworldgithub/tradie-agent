@@ -2300,7 +2300,7 @@ import { DidsService } from '../dids/dids.service';
 import { TradiesService } from '../tradies/tradies.service';
 import { SessionService } from '../session/session.service';
 import { CallsService } from '../calls/calls.service';
-import { AriRtpMediaService } from '../ari/ari-rtp-media.service';
+import { AriWebSocketGateway } from '../ari/ari-websocket.gateway';
 import { NotificationService } from 'src/common/notification.service';
 import { VoiceMlBuilder } from './voiceml.builder';
 import { Customer, CustomerDocument } from './Schema/customer.schema';
@@ -2374,7 +2374,7 @@ export class VoiceService {
     private readonly tradiesService: TradiesService,
     private readonly sessionService: SessionService,
     private readonly callsService: CallsService,
-    private readonly ariRtpMediaService: AriRtpMediaService,
+    private readonly ariWebSocketGateway: AriWebSocketGateway,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -2694,7 +2694,7 @@ export class VoiceService {
     try {
       const pcmBuffer = Buffer.from(audioDelta, 'base64');
       const ulawBuffer = this.convertPcm16ToUlaw(pcmBuffer);
-      this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
+      this.ariWebSocketGateway.sendAudioToCall(callId, ulawBuffer);
     } catch (err) {
       this.logger.error(
         `[${callId}] sendAudioToAri failed: ${(err as Error).message}`,
