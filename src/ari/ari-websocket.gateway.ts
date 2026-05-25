@@ -4,6 +4,7 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { WebSocket } from 'ws';
 import { ConfigService } from '@nestjs/config';
 
@@ -30,6 +31,7 @@ export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
   // Map WebSocket connections to call IDs
   private readonly wsToCallId = new Map<WebSocket, string>();
   private readonly callIdToWs = new Map<string, WebSocket>();
+  private readonly pendingConnections = new Map<WebSocket, string>();
 
   // Audio processing handlers
   private audioProcessor:
@@ -69,22 +71,38 @@ export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
 
   async handleConnection(client: WebSocket, request: any) {
     const url = request.url || '';
-    const callId = this.extractCallIdFromUrl(url);
-
+    let callId = this.extractCallIdFromUrl(url);
     if (!callId) {
-      this.logger.warn('WebSocket connection without call ID - closing');
-      client.close(1008, 'Call ID required');
-      return;
+      callId = this.extractCallIdFromHeaders(request?.headers || {});
     }
 
-    this.logger.log(`WebSocket connected for call=${callId}`);
-
-    // Store mapping
-    this.wsToCallId.set(client, callId);
-    this.callIdToWs.set(callId, client);
+    if (!callId) {
+      const pendingId = randomUUID();
+      this.pendingConnections.set(client, pendingId);
+      this.logger.warn(
+        `WebSocket connection without call ID - pending connection ${pendingId}`,
+      );
+    } else {
+      this.logger.log(`WebSocket connected for call=${callId}`);
+      this.wsToCallId.set(client, callId);
+      this.callIdToWs.set(callId, client);
+    }
 
     client.on('message', (data: Buffer) => {
-      this.handleAudioMessage(callId, data);
+      if (this.pendingConnections.has(client)) {
+        const resolved = this.resolveCallIdFromFirstMessage(client, data);
+        if (resolved) {
+          this.handleAudioMessage(resolved, data);
+        }
+        return;
+      }
+
+      const resolvedCallId = this.wsToCallId.get(client);
+      if (!resolvedCallId) {
+        this.logger.warn('WebSocket message received without call ID');
+        return;
+      }
+      this.handleAudioMessage(resolvedCallId, data);
     });
 
     client.on('error', (error) => {
@@ -93,7 +111,7 @@ export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
 
     client.on('close', (code, reason) => {
       this.logger.log(
-        `WebSocket closed for call=${callId}: code=${code}, reason=${reason}`,
+        `WebSocket closed for call=${this.wsToCallId.get(client) ?? 'unknown'}: code=${code}, reason=${reason}`,
       );
       this.cleanupConnection(client);
     });
@@ -204,11 +222,68 @@ export class AriWebSocketGateway implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private extractCallIdFromHeaders(
+    headers: Record<string, unknown>,
+  ): string | null {
+    const protocolHeader = headers['sec-websocket-protocol'];
+    const headerValues = [protocolHeader, headers['sec-websocket-extensions']]
+      .filter(Boolean)
+      .map((value) => String(value));
+
+    for (const headerValue of headerValues) {
+      const match = headerValue.match(/extmedia-([\w.-]+)/i);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+
+    return null;
+  }
+
+  private resolveCallIdFromFirstMessage(
+    client: WebSocket,
+    data: Buffer,
+  ): string | null {
+    let message: any;
+    try {
+      message = JSON.parse(data.toString());
+    } catch (error) {
+      const pendingId = this.pendingConnections.get(client) ?? 'unknown';
+      this.logger.warn(
+        `Pending connection ${pendingId} sent non-JSON first message; closing`,
+      );
+      client.close(1008, 'Call ID required');
+      this.pendingConnections.delete(client);
+      return null;
+    }
+
+    const channelId = message?.channel?.id;
+    if (typeof channelId === 'string' && channelId.startsWith('extmedia-')) {
+      const callId = channelId.replace('extmedia-', '');
+      this.pendingConnections.delete(client);
+      this.wsToCallId.set(client, callId);
+      this.callIdToWs.set(callId, client);
+      this.logger.log(
+        `WebSocket callId resolved from first message: ${callId}`,
+      );
+      return callId;
+    }
+
+    const pendingId = this.pendingConnections.get(client) ?? 'unknown';
+    this.logger.warn(
+      `Pending connection ${pendingId} missing channel info in first message; closing`,
+    );
+    client.close(1008, 'Call ID required');
+    this.pendingConnections.delete(client);
+    return null;
+  }
+
   /**
    * Clean up connection mappings
    */
   private cleanupConnection(client: WebSocket) {
     const callId = this.wsToCallId.get(client);
+    this.pendingConnections.delete(client);
     if (callId) {
       this.wsToCallId.delete(client);
       this.callIdToWs.delete(callId);
