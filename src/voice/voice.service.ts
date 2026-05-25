@@ -3409,6 +3409,7 @@ IF SEVERITY IS HIGH (regardless of clarity):
 
 IF SEVERITY IS LOW OR MEDIUM AND CLARITY IS CLEAR:
 → React naturally and acknowledge what they said before moving on.
+→ Never ask the customer to identify the trade or type of work — infer it yourself from what they described.
 → Ask ONE context-driven follow-up question ONLY if it would genuinely help the tradie who calls back. Base it entirely on the caller's exact words — never on a template.
 → The question must be impossible to ask without having heard exactly what this person said. If it could go to any caller with the same trade type, it is too generic.
 → If they already gave enough detail, skip the follow-up entirely.
