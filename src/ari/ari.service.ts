@@ -689,10 +689,11 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   private async createWebSocketExternalMediaChannel(
     callId: string,
   ): Promise<string | undefined> {
-    const wsPort = this.configService.get<number>('WEBSOCKET_PORT', 9090);
-    const wsHost = `127.0.0.1:${wsPort}`; // Use IP instead of localhost for Asterisk DNS
+    const rtpHost =
+      this.configService.get<string>('ASTERISK_EXTERNAL_MEDIA_HOST') ||
+      '127.0.0.1:6000';
 
-    this.logger.log(`[${callId}] Creating externalMedia with host=${wsHost}`);
+    this.logger.log(`[${callId}] Creating externalMedia with host=${rtpHost}`);
 
     const response = await this.ariRequest<any>(
       'post',
@@ -700,15 +701,15 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       {
         app: this.getAriApp(),
         channelId: `extmedia-${callId}`,
-        external_host: wsHost, // Use IP instead of localhost
-        format: 'slin', // 8kHz, 16-bit signed PCM mono
+        external_host: rtpHost,
+        format: 'ulaw',
         direction: 'both',
-        // Remove transport parameter - not supported in this Asterisk version
+        transport: 'udp',
       },
     );
 
     this.logger.log(
-      `Created WebSocket externalMedia channel for call=${callId} host=${wsHost} channelId=${response?.id}`,
+      `Created WebSocket externalMedia channel for call=${callId} host=${rtpHost} channelId=${response?.id}`,
     );
     return response?.id;
   }
