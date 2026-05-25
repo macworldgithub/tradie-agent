@@ -2300,6 +2300,7 @@ import { DidsService } from '../dids/dids.service';
 import { TradiesService } from '../tradies/tradies.service';
 import { SessionService } from '../session/session.service';
 import { CallsService } from '../calls/calls.service';
+import { AriRtpMediaService } from '../ari/ari-rtp-media.service';
 import { NotificationService } from 'src/common/notification.service';
 import { VoiceMlBuilder } from './voiceml.builder';
 import { Customer, CustomerDocument } from './Schema/customer.schema';
@@ -2373,6 +2374,7 @@ export class VoiceService {
     private readonly tradiesService: TradiesService,
     private readonly sessionService: SessionService,
     private readonly callsService: CallsService,
+    private readonly ariRtpMediaService: AriRtpMediaService,
     private readonly notificationService: NotificationService,
   ) {}
 
@@ -2689,11 +2691,40 @@ export class VoiceService {
    * Send audio to ARI WebSocket for phone playback
    */
   private sendAudioToAri(callId: string, audioDelta: string) {
-    // This will connect to your ARI WebSocket gateway
-    // You'll need to inject the ARI WebSocket Gateway or emit events
-    this.logger.log(
-      `[${callId}] Sending audio to ARI: ${audioDelta.length} chars`,
-    );
+    try {
+      const pcmBuffer = Buffer.from(audioDelta, 'base64');
+      const ulawBuffer = this.convertPcm16ToUlaw(pcmBuffer);
+      this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
+    } catch (err) {
+      this.logger.error(
+        `[${callId}] sendAudioToAri failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private convertPcm16ToUlaw(pcmBuffer: Buffer): Buffer {
+    const ulaw = Buffer.alloc(pcmBuffer.length / 2);
+    for (let i = 0; i < ulaw.length; i++) {
+      const sample = pcmBuffer.readInt16LE(i * 2);
+      ulaw[i] = this.linearToUlaw(sample);
+    }
+    return ulaw;
+  }
+
+  private linearToUlaw(sample: number): number {
+    const BIAS = 0x84;
+    const CLIP = 32635;
+    let sign = 0;
+    if (sample < 0) {
+      sample = -sample;
+      sign = 0x80;
+    }
+    if (sample > CLIP) sample = CLIP;
+    sample += BIAS;
+    const exponent = Math.floor(Math.log2(sample)) - 6;
+    const mantissa = (sample >> (exponent + 1)) & 0x0f;
+    const ulawByte = ~(sign | (exponent << 4) | mantissa) & 0xff;
+    return ulawByte;
   }
 
   /**
