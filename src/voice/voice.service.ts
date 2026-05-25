@@ -2692,14 +2692,29 @@ export class VoiceService {
    */
   private sendAudioToAri(callId: string, audioDelta: string) {
     try {
-      const pcmBuffer = Buffer.from(audioDelta, 'base64');
-      const ulawBuffer = this.convertPcm16ToUlaw(pcmBuffer);
+      const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
+      const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
+      const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
       this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
     } catch (err) {
       this.logger.error(
         `[${callId}] sendAudioToAri failed: ${(err as Error).message}`,
       );
     }
+  }
+
+  private downsample16kTo8k(input: Buffer): Buffer {
+    const samples = input.length / 2;
+    const output = Buffer.alloc(Math.floor(samples / 2) * 2);
+    let outIndex = 0;
+    for (let i = 0; i < samples - 1; i += 2) {
+      const s1 = input.readInt16LE(i * 2);
+      const s2 = input.readInt16LE((i + 1) * 2);
+      const avg = Math.round((s1 + s2) / 2);
+      output.writeInt16LE(avg, outIndex);
+      outIndex += 2;
+    }
+    return output;
   }
 
   private convertPcm16ToUlaw(pcmBuffer: Buffer): Buffer {
