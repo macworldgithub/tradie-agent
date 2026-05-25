@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { VoiceController } from './voice.controller';
 import { VoiceService } from './voice.service';
@@ -9,6 +9,7 @@ import { TradiesModule } from '../tradies/tradies.module';
 import { SessionService } from '../session/session.service';
 import { CallsModule } from '../calls/calls.module';
 import { CommonModule } from '../common/common.module';
+import { AriModule } from '../ari/ari.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { CommonModule } from '../common/common.module';
     TradiesModule,
     CallsModule,
     CommonModule,
+    forwardRef(() => AriModule),
   ],
   controllers: [VoiceController],
   providers: [VoiceService, VoiceGateway, SessionService],
