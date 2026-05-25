@@ -20,8 +20,8 @@ export class Tradie {
   @Prop({ enum: ['email', 'sms', 'both'], default: 'email' })
   notificationPreference: string;
 
-  @Prop({ default: 'active' })
-  status: string; // 'active' | 'inactive'
+  @Prop({ type: String, enum: ['geo', 'ussd'], default: 'geo' })
+  callMode: string;
 }
 
 export const TradieSchema = SchemaFactory.createForClass(Tradie);

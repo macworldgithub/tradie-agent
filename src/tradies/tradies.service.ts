@@ -45,13 +45,6 @@ export class TradiesService {
   }
 
   async softDelete(id: string): Promise<Tradie | null> {
-    return this.tradieModel
-      .findByIdAndUpdate(
-        id,
-        { status: 'inactive' },
-        { new: true, runValidators: true },
-      )
-      .lean()
-      .exec();
+    return this.tradieModel.findByIdAndDelete(id).lean().exec();
   }
 }

@@ -16,9 +16,6 @@ export class Did {
 
   @Prop({ required: true })
   assignedTradieId: string;
-
-  @Prop({ default: true })
-  isActive: boolean;
 }
 
 export const DidSchema = SchemaFactory.createForClass(Did);

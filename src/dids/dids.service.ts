@@ -16,7 +16,7 @@ export class DidsService {
   constructor(
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
-  ) { }
+  ) {}
 
   async create(dto: CreateDidDto & { companyId: string }): Promise<Did> {
     const existing = await this.didModel
@@ -97,11 +97,7 @@ export class DidsService {
 
   async softDelete(id: string): Promise<Did | null> {
     return this.didModel
-      .findByIdAndUpdate(
-        id,
-        { isActive: false },
-        { new: true, runValidators: true },
-      )
+      .findByIdAndDelete(id)
       .populate('assignedTradieId', 'name phoneNumber email')
       .lean()
       .exec();

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class CreateDidDto {
   @ApiProperty({ example: '+61468112021' })
@@ -16,10 +16,4 @@ export class CreateDidDto {
   @IsOptional()
   @IsString()
   tradieNumber?: string;
-
-
-  @ApiPropertyOptional({ example: true, default: true })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
 }

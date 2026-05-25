@@ -89,6 +89,32 @@ export class WebhookService {
       console.log('=== CALLLOG CREATED ===');
       console.log('status: initiated');
 
+      // If tradie is configured for USSD, skip dialing and go straight to SIP fallback
+      if (tradie?.callMode === 'ussd') {
+        // mark call as in_progress
+        if (enfonicaCallId) {
+          await this.callsService.updateCallStatus(enfonicaCallId, 'initiated');
+        }
+
+        const asteriskHost =
+          this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
+        const resolvedCallId2 = enfonicaCallId;
+        const encodedCallId = encodeURIComponent(resolvedCallId2);
+        const safeCallerId =
+          callerNumber && callerNumber.startsWith('+')
+            ? callerNumber
+            : didNumber;
+
+        const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Say>Please hold, connecting you to our assistant.</Say>
+  <Call CallerId="${safeCallerId}">
+    <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
+  </Call>
+</Response>`;
+        return { type: 'voiceml', body: voiceML };
+      }
+
       if (!tradieNumber) {
         this.logger.warn(`No tradie number found for DID ${didNumber}`);
         return { type: 'ack' };

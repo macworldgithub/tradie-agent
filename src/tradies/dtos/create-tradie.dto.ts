@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, IsEnum } from 'class-validator';
 
 export class CreateTradieDto {
   @ApiProperty({ example: 'John Smith' })
@@ -17,14 +17,17 @@ export class CreateTradieDto {
   @IsString()
   email?: string;
 
-
-  @ApiPropertyOptional({ example: 'active', default: 'active' })
-  @IsOptional()
-  @IsString()
-  status?: string;
-
   @ApiPropertyOptional({ example: 'email', default: 'email' })
   @IsOptional()
   @IsString()
   notificationPreference?: string;
+
+  @ApiPropertyOptional({
+    example: 'geo',
+    enum: ['geo', 'ussd'],
+    default: 'geo',
+  })
+  @IsOptional()
+  @IsEnum(['geo', 'ussd'])
+  callMode?: string;
 }
