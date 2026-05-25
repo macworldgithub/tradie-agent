@@ -700,7 +700,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       {
         app: this.getAriApp(),
         channelId: `extmedia-${callId}`,
-        external_host: wsHost, // Use IP instead of localhost
+        external_host: `${wsHost}?callId=${callId}`, // Use IP instead of localhost
         format: 'slin', // 8kHz, 16-bit signed PCM mono
         direction: 'both',
         // Remove transport parameter - not supported in this Asterisk version
