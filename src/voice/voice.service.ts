@@ -2695,7 +2695,12 @@ export class VoiceService {
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
       const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
       const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
-      this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
+
+      const CHUNK_SIZE = 160;
+      for (let i = 0; i < ulawBuffer.length; i += CHUNK_SIZE) {
+        const chunk = ulawBuffer.subarray(i, i + CHUNK_SIZE);
+        this.ariRtpMediaService.sendUlawToCall(callId, chunk);
+      }
     } catch (err) {
       this.logger.error(
         `[${callId}] sendAudioToAri failed: ${(err as Error).message}`,
