@@ -321,31 +321,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   }
 
   private handleInboundRtpFrame(callId: string, ulawPayload: Buffer) {
-    // Keep RTP handler for backward compatibility but prioritize WebSocket
-    const aiSession = this.aiSessions.get(callId);
-    if (
-      !aiSession ||
-      aiSession.closed ||
-      aiSession.ws.readyState !== WebSocket.OPEN
-    ) {
-      return;
-    }
-
-    try {
-      const pcm8kBuffer = this.convertUlawToSlin(ulawPayload);
-      const pcm24kBuffer = this.upsample8kTo24k(pcm8kBuffer);
-
-      aiSession.ws.send(
-        JSON.stringify({
-          type: 'input_audio_buffer.append',
-          audio: pcm24kBuffer.toString('base64'),
-        }),
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to send inbound RTP frame to AI for call=${callId}: ${(error as Error).message}`,
-      );
-    }
+    this.voiceService.sendInboundAudio(callId, ulawPayload);
   }
 
   /**

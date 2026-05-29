@@ -2870,6 +2870,76 @@ export class VoiceService {
     );
   }
 
+  sendInboundAudio(sessionId: string, ulawPayload: Buffer): void {
+    const session = this.sessions.get(sessionId);
+    if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    try {
+      const pcm8k = this.convertUlawToSlin(ulawPayload);
+      const pcm24k = this.upsample8kTo24k(pcm8k);
+      session.ws.send(
+        JSON.stringify({
+          type: 'input_audio_buffer.append',
+          audio: pcm24k.toString('base64'),
+        }),
+      );
+    } catch (err) {
+      this.logger.error(
+        `[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private convertUlawToSlin(ulawBuffer: Buffer): Buffer {
+    const slinBuffer = Buffer.alloc(ulawBuffer.length * 2);
+
+    for (let i = 0; i < ulawBuffer.length; i++) {
+      const sample = this.ulawToLinear(ulawBuffer[i]);
+      slinBuffer.writeInt16LE(sample, i * 2);
+    }
+
+    return slinBuffer;
+  }
+
+  private ulawToLinear(ulaw: number): number {
+    const BIAS = 0x84;
+
+    ulaw = ~ulaw & 0xff;
+
+    const sign = ulaw & 0x80;
+    const exponent = (ulaw >> 4) & 0x07;
+    const mantissa = ulaw & 0x0f;
+
+    let sample = (mantissa << 4) | 0x08;
+    sample <<= exponent;
+    sample -= BIAS;
+
+    if (sign !== 0) {
+      sample = -sample;
+    }
+
+    return sample;
+  }
+
+  private upsample8kTo24k(input: Buffer): Buffer {
+    const inputSamples = input.length / 2;
+    const outputSamples = inputSamples * 3;
+    const output = Buffer.alloc(outputSamples * 2);
+
+    for (let i = 0; i < inputSamples; i++) {
+      const sample = input.readInt16LE(i * 2);
+      const outIndex = i * 3;
+
+      output.writeInt16LE(sample, outIndex * 2);
+      output.writeInt16LE(sample, (outIndex + 1) * 2);
+      output.writeInt16LE(sample, (outIndex + 2) * 2);
+    }
+
+    return output;
+  }
+
   /**
    * STEP 3: The Greeting Logic
    */
