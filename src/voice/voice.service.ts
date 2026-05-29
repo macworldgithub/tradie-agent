@@ -2659,7 +2659,7 @@ export class VoiceService {
         // Handle voice events and send audio back to ARI
         if (event.type === 'audio-delta') {
           // Send audio to ARI WebSocket for phone playback
-          await this.sendAudioToAri(callId, event.delta);
+          this.sendAudioToAri(callId, event.delta);
         }
       });
 
@@ -2690,20 +2690,15 @@ export class VoiceService {
   /**
    * Send audio to ARI WebSocket for phone playback
    */
-  private async sendAudioToAri(
-    callId: string,
-    audioDelta: string,
-  ): Promise<void> {
+  private sendAudioToAri(callId: string, audioDelta: string): void {
     try {
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
       const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
       const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
-
       const CHUNK_SIZE = 160;
       for (let i = 0; i < ulawBuffer.length; i += CHUNK_SIZE) {
         const chunk = ulawBuffer.subarray(i, i + CHUNK_SIZE);
         this.ariRtpMediaService.sendUlawToCall(callId, chunk);
-        await new Promise((resolve) => setTimeout(resolve, 20));
       }
     } catch (err) {
       this.logger.error(
