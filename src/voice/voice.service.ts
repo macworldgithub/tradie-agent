@@ -2653,13 +2653,13 @@ export class VoiceService {
 
     try {
       // Create realtime session for this call
-      await this.createRealtimeSession(callId, (event) => {
+      await this.createRealtimeSession(callId, async (event) => {
         this.logger.log(`[${callId}] Voice event: ${event.type}`);
 
         // Handle voice events and send audio back to ARI
         if (event.type === 'audio-delta') {
           // Send audio to ARI WebSocket for phone playback
-          this.sendAudioToAri(callId, event.delta);
+          await this.sendAudioToAri(callId, event.delta);
         }
       });
 
@@ -2690,7 +2690,10 @@ export class VoiceService {
   /**
    * Send audio to ARI WebSocket for phone playback
    */
-  private sendAudioToAri(callId: string, audioDelta: string) {
+  private async sendAudioToAri(
+    callId: string,
+    audioDelta: string,
+  ): Promise<void> {
     try {
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
       const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
@@ -2700,6 +2703,7 @@ export class VoiceService {
       for (let i = 0; i < ulawBuffer.length; i += CHUNK_SIZE) {
         const chunk = ulawBuffer.subarray(i, i + CHUNK_SIZE);
         this.ariRtpMediaService.sendUlawToCall(callId, chunk);
+        await new Promise((resolve) => setTimeout(resolve, 20));
       }
     } catch (err) {
       this.logger.error(
@@ -2709,15 +2713,16 @@ export class VoiceService {
   }
 
   private downsample16kTo8k(input: Buffer): Buffer {
-    const samples = input.length / 2;
-    const output = Buffer.alloc(Math.floor(samples / 2) * 2);
-    let outIndex = 0;
-    for (let i = 0; i < samples - 1; i += 2) {
-      const s1 = input.readInt16LE(i * 2);
-      const s2 = input.readInt16LE((i + 1) * 2);
+    const inputSamples = input.length / 2;
+    const outputSamples = Math.floor(inputSamples / 2);
+    const output = Buffer.alloc(outputSamples * 2);
+
+    for (let i = 0; i < outputSamples; i++) {
+      const s1 = input.readInt16LE(i * 4);
+      const s2 = input.readInt16LE(i * 4 + 2);
       const avg = Math.round((s1 + s2) / 2);
-      output.writeInt16LE(avg, outIndex);
-      outIndex += 2;
+      const clamped = Math.max(-32768, Math.min(32767, avg));
+      output.writeInt16LE(clamped, i * 2);
     }
     return output;
   }
