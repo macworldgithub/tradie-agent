@@ -3122,7 +3122,10 @@ export class VoiceService {
 
   private sendTextToElevenLabs(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
-    if (session?.elevenLabsWs?.readyState === WebSocket.OPEN) {
+    if (
+      session?.elevenLabsReady &&
+      session?.elevenLabsWs?.readyState === WebSocket.OPEN
+    ) {
       session.elevenLabsWs.send(
         JSON.stringify({ text, try_trigger_generation: true }),
       );
@@ -3219,6 +3222,12 @@ export class VoiceService {
       // ─────────────────────────────────────────────────────────────────
       case 'response.output_text.delta':
       case 'response.text.delta':
+        if (
+          !session.elevenLabsReady &&
+          session.elevenLabsWs?.readyState === WebSocket.OPEN
+        ) {
+          session.elevenLabsReady = true;
+        }
         if (session.elevenLabsReady) {
           this.sendTextToElevenLabs(sessionId, event.delta);
         } else {
@@ -3251,8 +3260,7 @@ export class VoiceService {
           }
         }
 
-        this.closeElevenLabsWs(sessionId);
-        this.openElevenLabsStream(sessionId, true);
+        this.flushElevenLabsStream(sessionId);
         session.onEvent({ type: 'speech-started' });
         break;
 
