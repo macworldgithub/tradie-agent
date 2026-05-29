@@ -326,8 +326,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     if (
       !aiSession ||
       aiSession.closed ||
-      aiSession.ws.readyState !== WebSocket.OPEN ||
-      aiSession.processingAudio // Don't use RTP if WebSocket is active
+      aiSession.ws.readyState !== WebSocket.OPEN
     ) {
       return;
     }
