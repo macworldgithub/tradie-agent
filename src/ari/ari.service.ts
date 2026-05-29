@@ -332,10 +332,13 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      const pcm8kBuffer = this.convertUlawToSlin(ulawPayload);
+      const pcm24kBuffer = this.upsample8kTo24k(pcm8kBuffer);
+
       aiSession.ws.send(
         JSON.stringify({
           type: 'input_audio_buffer.append',
-          audio: ulawPayload.toString('base64'),
+          audio: pcm24kBuffer.toString('base64'),
         }),
       );
     } catch (error) {
@@ -437,6 +440,23 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     }
 
     return slinBuffer;
+  }
+
+  private upsample8kTo24k(input: Buffer): Buffer {
+    const inputSamples = input.length / 2;
+    const outputSamples = inputSamples * 3;
+    const output = Buffer.alloc(outputSamples * 2);
+
+    for (let i = 0; i < inputSamples; i++) {
+      const sample = input.readInt16LE(i * 2);
+      const outIndex = i * 3;
+
+      output.writeInt16LE(sample, outIndex * 2);
+      output.writeInt16LE(sample, (outIndex + 1) * 2);
+      output.writeInt16LE(sample, (outIndex + 2) * 2);
+    }
+
+    return output;
   }
 
   /**
