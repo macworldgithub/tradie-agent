@@ -201,7 +201,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     const callId = channelId;
     const bridgeId = `bridge-${callId}`;
 
-    let aiInstructions = this.getDefaultAiInstructions();
+    // let aiInstructions = this.getDefaultAiInstructions();
 
     try {
       const voiceContext = await this.voiceService.handleIncomingCall(
@@ -256,8 +256,8 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(`[${callId}] Step 7: Registering with RTP service`);
       // Register with RTP for backward compatibility but use WebSocket for audio
       this.ariRtpMediaService.registerCallSession(callId);
-      this.logger.log(`[${callId}] Step 8: Starting AI session`);
-      this.startAiSession(callId, aiInstructions);
+      this.logger.log(`[${callId}] Step 8: AI session handled by VoiceService`);
+      // this.startAiSession(callId, aiInstructions);
 
       this.logger.log(
         `ARI bridge ready. call=${callId} bridge=${bridgeId} wsExtMedia=${externalMediaChannelId || 'none'}`,
