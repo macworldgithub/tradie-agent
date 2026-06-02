@@ -2376,7 +2376,7 @@ export class VoiceService {
     private readonly callsService: CallsService,
     private readonly ariRtpMediaService: AriRtpMediaService,
     private readonly notificationService: NotificationService,
-  ) {}
+  ) { }
 
   async handleIncomingWebhook(
     payload: Record<string, unknown>,
@@ -2794,7 +2794,7 @@ export class VoiceService {
                 },
                 turn_detection: {
                   type: 'server_vad',
-                  threshold: 0.8,
+                  threshold: 0.7,
                   prefix_padding_ms: 300,
                   silence_duration_ms: 2000,
                 },
@@ -2876,8 +2876,8 @@ export class VoiceService {
       `[${sessionId}] sendInboundAudio called, session=${!!session}, ` +
       `wsState=${session?.ws?.readyState}`
     );
-    if (!session || !session.ws || 
-        session.ws.readyState !== WebSocket.OPEN) {
+    if (!session || !session.ws ||
+      session.ws.readyState !== WebSocket.OPEN) {
       return;
     }
 
@@ -3002,7 +3002,7 @@ export class VoiceService {
           voice_settings: {
             stability: 0.4,
             similarity_boost: 0.75,
-            speed: 1.15,
+            speed: 0.9,
           },
           xi_api_key: apiKey,
         }),
@@ -3036,7 +3036,7 @@ export class VoiceService {
             const responseCreatedAfterGreetingMs =
               session.firstResponseCreatedAtMs && session.greetingTriggeredAtMs
                 ? session.firstResponseCreatedAtMs -
-                  session.greetingTriggeredAtMs
+                session.greetingTriggeredAtMs
                 : -1;
             const firstAudioAfterResponseCreatedMs =
               session.firstResponseCreatedAtMs
@@ -3049,7 +3049,7 @@ export class VoiceService {
           }
           session.onEvent({ type: 'audio-delta', delta: msg.audio });
         }
-      } catch (err) {}
+      } catch (err) { }
     });
 
     elWs.on('error', (err) => {
