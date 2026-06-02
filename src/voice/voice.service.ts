@@ -3139,9 +3139,8 @@ export class VoiceService {
 
   private flushElevenLabsStream(sessionId: string): void {
     const session = this.sessions.get(sessionId);
-    if (session?.elevenLabsWs?.readyState === WebSocket.OPEN) {
-      session.elevenLabsWs.send(JSON.stringify({ text: '' }));
-    }
+    if (!session) return;
+    session.elevenLabsReady = false;
   }
 
   private closeElevenLabsWs(sessionId: string): void {
