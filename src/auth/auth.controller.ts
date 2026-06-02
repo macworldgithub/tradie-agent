@@ -21,7 +21,7 @@ import { VerifyOtpDto } from './dtos/verify-otp.dto';
 @ApiTags('Auth')
 @Controller('api/auth')
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(private authService: AuthService) { }
 
   @Post('register')
   @ApiOperation({ summary: 'Register new user' })
@@ -59,3 +59,4 @@ export class AuthController {
     );
   }
 }
+// jabbbba 42
