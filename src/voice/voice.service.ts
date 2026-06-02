@@ -2872,7 +2872,12 @@ export class VoiceService {
 
   sendInboundAudio(sessionId: string, ulawPayload: Buffer): void {
     const session = this.sessions.get(sessionId);
-    if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
+    this.logger.debug(
+      `[${sessionId}] sendInboundAudio called, session=${!!session}, ` +
+      `wsState=${session?.ws?.readyState}`
+    );
+    if (!session || !session.ws || 
+        session.ws.readyState !== WebSocket.OPEN) {
       return;
     }
 
