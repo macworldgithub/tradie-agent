@@ -2996,7 +2996,7 @@ export class VoiceService {
           voice_settings: {
             stability: 0.4,
             similarity_boost: 0.75,
-            speed: 0.9,
+            speed: 1.0,
           },
           xi_api_key: apiKey,
         }),
@@ -3050,7 +3050,10 @@ export class VoiceService {
       this.logger.warn(`[${sessionId}] ElevenLabs WS error: ${err.message}`);
     });
 
-    elWs.on('close', () => {
+    elWs.on('close', (code, reason) => {
+      this.logger.warn(
+        `[${sessionId}] ElevenLabs WS closed: code=${code} reason=${reason?.toString()}`
+      );
       if (session.elevenLabsWs === elWs) {
         session.elevenLabsReady = false;
       }
