@@ -2881,6 +2881,10 @@ export class VoiceService {
       return;
     }
 
+    if (session.isResponseActive) {
+      return;
+    }
+
     try {
       const pcm8k = this.convertUlawToSlin(ulawPayload);
       const pcm24k = this.upsample8kTo24k(pcm8k);
@@ -3054,10 +3058,24 @@ export class VoiceService {
       this.logger.warn(
         `[${sessionId}] ElevenLabs WS closed: code=${code} reason=${reason?.toString()}`
       );
+      clearInterval(keepaliveInterval);
       if (session.elevenLabsWs === elWs) {
         session.elevenLabsReady = false;
       }
     });
+
+    const keepaliveInterval = setInterval(() => {
+      const s = this.sessions.get(sessionId);
+      if (!s || !s.elevenLabsWs || 
+          s.elevenLabsWs !== elWs ||
+          s.elevenLabsWs.readyState !== WebSocket.OPEN) {
+        clearInterval(keepaliveInterval);
+        return;
+      }
+      try {
+        s.elevenLabsWs.send(JSON.stringify({ text: ' ' }));
+      } catch {}
+    }, 10000);
 
     session.elevenLabsWs = elWs;
   }
