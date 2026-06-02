@@ -159,6 +159,9 @@ export class AriRtpMediaService implements OnModuleInit, OnModuleDestroy {
 
     const marker = (packet[1] & 0x80) !== 0;
     const payloadType = packet[1] & 0x7f;
+    if (payloadType !== 0) {
+      return;
+    }
     const sequenceNumber = packet.readUInt16BE(2);
     const timestamp = packet.readUInt32BE(4);
 

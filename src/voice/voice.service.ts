@@ -2910,21 +2910,15 @@ export class VoiceService {
 
   private ulawToLinear(ulaw: number): number {
     const BIAS = 0x84;
-
     ulaw = ~ulaw & 0xff;
-
     const sign = ulaw & 0x80;
     const exponent = (ulaw >> 4) & 0x07;
     const mantissa = ulaw & 0x0f;
-
-    let sample = (mantissa << 4) | 0x08;
+    let sample = (mantissa << 3) + BIAS;
     sample <<= exponent;
-    sample -= BIAS;
-
     if (sign !== 0) {
       sample = -sample;
     }
-
     return sample;
   }
 
