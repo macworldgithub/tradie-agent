@@ -2794,9 +2794,9 @@ export class VoiceService {
                 },
                 turn_detection: {
                   type: 'server_vad',
-                  threshold: 0.3,
-                  prefix_padding_ms: 500, // was 300
-                  silence_duration_ms: 1500, // was 2000
+                  threshold: 0.6,
+                  prefix_padding_ms: 300,
+                  silence_duration_ms: 2000,
                 },
               },
             },
@@ -2881,9 +2881,9 @@ export class VoiceService {
       return;
     }
 
-    if (session.isResponseActive) {
-      return;
-    }
+    // Always forward audio to OpenAI — let server-side VAD handle
+    // barge-in detection. Gating audio here prevents VAD from
+    // distinguishing echo vs. real speech, causing false interrupts.
 
     try {
       const pcm8k = this.convertUlawToSlin(ulawPayload);
@@ -3155,6 +3155,17 @@ export class VoiceService {
   private flushElevenLabsStream(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
+
+    // Send empty-text flush so ElevenLabs generates any remaining
+    // buffered audio, then mark the stream as no longer accepting text.
+    if (
+      session.elevenLabsWs &&
+      session.elevenLabsWs.readyState === WebSocket.OPEN
+    ) {
+      try {
+        session.elevenLabsWs.send(JSON.stringify({ text: '' }));
+      } catch {}
+    }
     session.elevenLabsReady = false;
   }
 
@@ -3279,7 +3290,11 @@ export class VoiceService {
           }
         }
 
-        this.flushElevenLabsStream(sessionId);
+        // Close and reopen ElevenLabs stream to immediately stop playback
+        // and prevent the truncated audio from continuing. This also
+        // prepares a fresh stream for the next AI response.
+        this.closeElevenLabsWs(sessionId);
+        this.openElevenLabsStream(sessionId, true);
         session.onEvent({ type: 'speech-started' });
         break;
 
