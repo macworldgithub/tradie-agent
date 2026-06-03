@@ -2700,17 +2700,22 @@ export class VoiceService {
   private sendAudioToAri(callId: string, audioDelta: string): void {
     try {
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
+      this.logger.debug(`[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`);
+      
       const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
       const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
+      this.logger.debug(`[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, sending in chunks`);
+      
       const CHUNK_SIZE = 160;
+      let chunkCount = 0;
       for (let i = 0; i < ulawBuffer.length; i += CHUNK_SIZE) {
         const chunk = ulawBuffer.subarray(i, i + CHUNK_SIZE);
         this.ariRtpMediaService.sendUlawToCall(callId, chunk);
+        chunkCount++;
       }
+      this.logger.debug(`[${callId}] sendAudioToAri: sent ${chunkCount} RTP chunks to phone`);
     } catch (err) {
-      this.logger.error(
-        `[${callId}] sendAudioToAri failed: ${(err as Error).message}`,
-      );
+      this.logger.error(`[${callId}] sendAudioToAri FAILED at: ${(err as Error).message}`, err);
     }
   }
 
@@ -3023,6 +3028,12 @@ export class VoiceService {
         const msg = JSON.parse(data.toString());
         if (msg.audio) {
           const msgContextId = msg.contextId || msg.context_id;
+          this.logger.debug(
+            `[${sessionId}] EL chunk received: contextId=${msgContextId} ` +
+            `currentCtx=${session.currentContextId} ` +
+            `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
+            `audioBytes=${Buffer.from(msg.audio, 'base64').length}`
+          );
           if (session.currentContextId && msgContextId !== session.currentContextId) {
             this.logger.debug(
               `[${sessionId}] Discarding late audio chunk from old context: ${msgContextId}`,
@@ -3173,21 +3184,25 @@ export class VoiceService {
 
   private sendTextToElevenLabs(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
-    if (
-      session?.elevenLabsReady &&
-      session?.elevenLabsWs?.readyState === WebSocket.OPEN
-    ) {
-      if (!session.currentContextId) {
-        session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-      }
-      session.elevenLabsWs.send(
-        JSON.stringify({
-          text,
-          context_id: session.currentContextId,
-          try_trigger_generation: true,
-        }),
+    if (!session?.elevenLabsReady || session.elevenLabsWs?.readyState !== WebSocket.OPEN) {
+      this.logger.warn(
+        `[${sessionId}] sendTextToElevenLabs DROPPED: ` +
+        `ready=${session?.elevenLabsReady} ` +
+        `wsState=${session?.elevenLabsWs?.readyState} ` +
+        `text="${text?.substring(0, 30)}"`
       );
+      return;
     }
+    if (!session.currentContextId) {
+      session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+    }
+    session.elevenLabsWs.send(
+      JSON.stringify({
+        text,
+        context_id: session.currentContextId,
+        try_trigger_generation: true,
+      }),
+    );
   }
 
   private flushElevenLabsStream(sessionId: string): void {
@@ -3322,6 +3337,12 @@ export class VoiceService {
       // ─────────────────────────────────────────────────────────────────
       case 'response.output_text.delta':
       case 'response.text.delta':
+        this.logger.debug(
+          `[${sessionId}] Text delta: elevenLabsReady=${session.elevenLabsReady} ` +
+          `wsState=${session.elevenLabsWs?.readyState} ` +
+          `bufferSize=${session.textBuffer.length} ` +
+          `text="${event.delta?.substring(0, 20)}..."`
+        );
         if (
           !session.elevenLabsReady &&
           session.elevenLabsWs?.readyState === WebSocket.OPEN
