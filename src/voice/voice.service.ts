@@ -2327,6 +2327,12 @@ interface RealtimeSession {
   customerNumber?: string | null;
   didNumber?: string | null;
   currentContextId?: string | null; // Tracks the current active ElevenLabs context to prevent late chunk playback
+  lastSpeechStartedAtMs?: number | null;
+  lastSpeechStoppedAtMs?: number | null;
+  lastResponseCreatedAtMs?: number | null;
+  isFirstTextDeltaOfTurn?: boolean;
+  lastTextDeltaReceivedAtMs?: number | null;
+  firstAudioDeltaReceivedForContext?: boolean;
 }
 
 interface FunctionCallPayload {
@@ -2873,10 +2879,6 @@ export class VoiceService {
 
   sendInboundAudio(sessionId: string, ulawPayload: Buffer): void {
     const session = this.sessions.get(sessionId);
-    this.logger.debug(
-      `[${sessionId}] sendInboundAudio called, session=${!!session}, ` +
-      `wsState=${session?.ws?.readyState}`
-    );
     if (!session || !session.ws ||
       session.ws.readyState !== WebSocket.OPEN) {
       return;
@@ -3026,6 +3028,22 @@ export class VoiceService {
               `[${sessionId}] Discarding late audio chunk from old context: ${msgContextId}`,
             );
             return;
+          }
+
+          // Track and log granular latency metrics for each turn
+          if (!session.firstAudioDeltaReceivedForContext) {
+            session.firstAudioDeltaReceivedForContext = true;
+            const now = Date.now();
+            const fromSpeechStopped = session.lastSpeechStoppedAtMs ? `${now - session.lastSpeechStoppedAtMs}ms` : 'N/A';
+            const fromResponseCreated = session.lastResponseCreatedAtMs ? `${now - session.lastResponseCreatedAtMs}ms` : 'N/A';
+            const fromFirstTextDelta = session.lastTextDeltaReceivedAtMs ? `${now - session.lastTextDeltaReceivedAtMs}ms` : 'N/A';
+
+            this.logger.log(
+              `[${sessionId}] Turn Latency Breakdown:\n` +
+              `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
+              `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
+              `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`
+            );
           }
 
           if (!session.firstAudioDeltaLogged) {
@@ -3240,6 +3258,17 @@ export class VoiceService {
     switch (event.type) {
       case 'response.created':
         session.isResponseActive = true;
+        session.lastResponseCreatedAtMs = Date.now();
+        session.isFirstTextDeltaOfTurn = true;
+        session.firstAudioDeltaReceivedForContext = false;
+
+        if (session.lastSpeechStoppedAtMs) {
+          const vadDelay = Date.now() - session.lastSpeechStoppedAtMs;
+          this.logger.log(
+            `[${sessionId}] Timing: VAD (silence detection) + network handshake delay took ${vadDelay}ms`,
+          );
+        }
+
         if (!session.firstResponseCreatedAtMs) {
           session.firstResponseCreatedAtMs = Date.now();
           const fromSessionStart =
@@ -3299,6 +3328,18 @@ export class VoiceService {
         ) {
           session.elevenLabsReady = true;
         }
+
+        if (session.isFirstTextDeltaOfTurn) {
+          session.isFirstTextDeltaOfTurn = false;
+          session.lastTextDeltaReceivedAtMs = Date.now();
+          if (session.lastResponseCreatedAtMs) {
+            const timeToFirstText = Date.now() - session.lastResponseCreatedAtMs;
+            this.logger.log(
+              `[${sessionId}] Timing: OpenAI response generation delay (time to first text) took ${timeToFirstText}ms`,
+            );
+          }
+        }
+
         if (session.elevenLabsReady) {
           this.sendTextToElevenLabs(sessionId, event.delta);
         } else {
@@ -3319,6 +3360,7 @@ export class VoiceService {
         break;
 
       case 'input_audio_buffer.speech_started':
+        session.lastSpeechStartedAtMs = Date.now();
         this.logger.log(`[${sessionId}] USER INTERRUPTED -> Stopping AI Voice`);
 
         if (session.isResponseActive) {
@@ -3354,6 +3396,13 @@ export class VoiceService {
         // Ensure ElevenLabs WebSocket is still connected (reconnects only if closed/errored)
         this.openElevenLabsStream(sessionId);
         session.onEvent({ type: 'speech-started' });
+        break;
+
+      case 'input_audio_buffer.speech_stopped':
+        session.lastSpeechStoppedAtMs = Date.now();
+        this.logger.log(
+          `[${sessionId}] User finished speaking (VAD triggered speech_stopped event)`,
+        );
         break;
 
       case 'conversation.item.input_audio_transcription.completed':
