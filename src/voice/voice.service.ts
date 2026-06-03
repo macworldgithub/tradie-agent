@@ -2701,11 +2701,11 @@ export class VoiceService {
     try {
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
       this.logger.debug(`[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`);
-      
+
       const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
       const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
       this.logger.debug(`[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, sending in chunks`);
-      
+
       const CHUNK_SIZE = 160;
       let chunkCount = 0;
       for (let i = 0; i < ulawBuffer.length; i += CHUNK_SIZE) {
@@ -3209,19 +3209,20 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    if (session.elevenLabsWs?.readyState === WebSocket.OPEN && session.currentContextId) {
+    if (
+      session.elevenLabsWs &&
+      session.elevenLabsWs.readyState === WebSocket.OPEN &&
+      session.currentContextId
+    ) {
       try {
-        // Send empty string to signal end of text stream.
-        // Do NOT send flush:true — that cuts synthesis early and drops
-        // the last few words. Empty string tells ElevenLabs "no more text
-        // is coming" so it finishes generating whatever is still buffered.
         session.elevenLabsWs.send(
           JSON.stringify({
-            text: '',
+            text: ' ',
             context_id: session.currentContextId,
+            flush: true,
           }),
         );
-      } catch {}
+      } catch { }
     }
   }
 
