@@ -3209,20 +3209,19 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    if (
-      session.elevenLabsWs &&
-      session.elevenLabsWs.readyState === WebSocket.OPEN &&
-      session.currentContextId
-    ) {
+    if (session.elevenLabsWs?.readyState === WebSocket.OPEN && session.currentContextId) {
       try {
+        // Send empty string to signal end of text stream.
+        // Do NOT send flush:true — that cuts synthesis early and drops
+        // the last few words. Empty string tells ElevenLabs "no more text
+        // is coming" so it finishes generating whatever is still buffered.
         session.elevenLabsWs.send(
           JSON.stringify({
-            text: ' ',
+            text: '',
             context_id: session.currentContextId,
-            flush: true,
           }),
         );
-      } catch { }
+      } catch {}
     }
   }
 
