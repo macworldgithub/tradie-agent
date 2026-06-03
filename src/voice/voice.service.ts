@@ -2326,6 +2326,7 @@ interface RealtimeSession {
   enfonicaCallId?: string | null;
   customerNumber?: string | null;
   didNumber?: string | null;
+  currentContextId?: string | null; // Tracks the current active ElevenLabs context to prevent late chunk playback
 }
 
 interface FunctionCallPayload {
@@ -2796,7 +2797,7 @@ export class VoiceService {
                   type: 'server_vad',
                   threshold: 0.6,
                   prefix_padding_ms: 300,
-                  silence_duration_ms: 2000,
+                  silence_duration_ms: 1000,
                 },
               },
             },
@@ -2977,7 +2978,7 @@ export class VoiceService {
 
     const apiKey = this.config.get<string>('ELEVENLABS_API_KEY');
     const voiceId = this.config.get<string>('ELEVENLABS_VOICE_ID');
-    const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream-input?model_id=eleven_flash_v2_5&output_format=pcm_16000`;
+    const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/multi-stream-input?model_id=eleven_flash_v2_5&output_format=pcm_16000&inactivity_timeout=180`;
 
     const elWs = new WebSocket(wsUrl);
     this.instrumentClientWebSocketHandshake(
@@ -3019,6 +3020,14 @@ export class VoiceService {
       try {
         const msg = JSON.parse(data.toString());
         if (msg.audio) {
+          const msgContextId = msg.contextId || msg.context_id;
+          if (session.currentContextId && msgContextId !== session.currentContextId) {
+            this.logger.debug(
+              `[${sessionId}] Discarding late audio chunk from old context: ${msgContextId}`,
+            );
+            return;
+          }
+
           if (!session.firstAudioDeltaLogged) {
             const firstAudioAtMs = Date.now();
             session.firstAudioDeltaLogged = true;
@@ -3066,15 +3075,19 @@ export class VoiceService {
 
     const keepaliveInterval = setInterval(() => {
       const s = this.sessions.get(sessionId);
-      if (!s || !s.elevenLabsWs || 
-          s.elevenLabsWs !== elWs ||
-          s.elevenLabsWs.readyState !== WebSocket.OPEN) {
+      if (!s || !s.elevenLabsWs ||
+        s.elevenLabsWs !== elWs ||
+        s.elevenLabsWs.readyState !== WebSocket.OPEN) {
         clearInterval(keepaliveInterval);
         return;
       }
       try {
-        s.elevenLabsWs.send(JSON.stringify({ text: ' ' }));
-      } catch {}
+        const payload: any = { text: ' ' };
+        if (s.currentContextId) {
+          payload.context_id = s.currentContextId;
+        }
+        s.elevenLabsWs.send(JSON.stringify(payload));
+      } catch { }
     }, 10000);
 
     session.elevenLabsWs = elWs;
@@ -3146,8 +3159,15 @@ export class VoiceService {
       session?.elevenLabsReady &&
       session?.elevenLabsWs?.readyState === WebSocket.OPEN
     ) {
+      if (!session.currentContextId) {
+        session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+      }
       session.elevenLabsWs.send(
-        JSON.stringify({ text, try_trigger_generation: true }),
+        JSON.stringify({
+          text,
+          context_id: session.currentContextId,
+          try_trigger_generation: true,
+        }),
       );
     }
   }
@@ -3156,17 +3176,21 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    // Send empty-text flush so ElevenLabs generates any remaining
-    // buffered audio, then mark the stream as no longer accepting text.
     if (
       session.elevenLabsWs &&
-      session.elevenLabsWs.readyState === WebSocket.OPEN
+      session.elevenLabsWs.readyState === WebSocket.OPEN &&
+      session.currentContextId
     ) {
       try {
-        session.elevenLabsWs.send(JSON.stringify({ text: '' }));
-      } catch {}
+        session.elevenLabsWs.send(
+          JSON.stringify({
+            text: ' ',
+            context_id: session.currentContextId,
+            flush: true,
+          }),
+        );
+      } catch { }
     }
-    session.elevenLabsReady = false;
   }
 
   private closeElevenLabsWs(sessionId: string): void {
@@ -3186,6 +3210,7 @@ export class VoiceService {
       session.elevenLabsWs = null;
       session.elevenLabsReady = false;
       session.textBuffer = [];
+      session.currentContextId = null;
     }
   }
 
@@ -3226,6 +3251,22 @@ export class VoiceService {
             `[${sessionId}] Timing: first response.created at ${fromSessionStart}ms (after greeting=${fromGreeting}ms)`,
           );
         }
+
+        // Stop the previous context if one exists
+        if (session.currentContextId && session.elevenLabsWs?.readyState === WebSocket.OPEN) {
+          try {
+            session.elevenLabsWs.send(
+              JSON.stringify({
+                context_id: session.currentContextId,
+                close_context: true,
+              }),
+            );
+          } catch { }
+        }
+
+        // Generate a new context ID for the upcoming response text
+        session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+
         this.openElevenLabsStream(sessionId);
         break;
 
@@ -3290,11 +3331,28 @@ export class VoiceService {
           }
         }
 
-        // Close and reopen ElevenLabs stream to immediately stop playback
-        // and prevent the truncated audio from continuing. This also
-        // prepares a fresh stream for the next AI response.
-        this.closeElevenLabsWs(sessionId);
-        this.openElevenLabsStream(sessionId, true);
+        // Stop the current context on ElevenLabs immediately to halt synthesis and audio generation
+        if (session.currentContextId && session.elevenLabsWs?.readyState === WebSocket.OPEN) {
+          try {
+            this.logger.log(`[${sessionId}] Closing ElevenLabs context: ${session.currentContextId}`);
+            session.elevenLabsWs.send(
+              JSON.stringify({
+                context_id: session.currentContextId,
+                close_context: true,
+              }),
+            );
+          } catch (err) {
+            this.logger.warn(
+              `[${sessionId}] Close context failed: ${err.message}`,
+            );
+          }
+        }
+
+        // Invalidate current context ID to ignore any late in-flight chunks
+        session.currentContextId = null;
+
+        // Ensure ElevenLabs WebSocket is still connected (reconnects only if closed/errored)
+        this.openElevenLabsStream(sessionId);
         session.onEvent({ type: 'speech-started' });
         break;
 
