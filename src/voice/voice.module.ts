@@ -10,6 +10,9 @@ import { SessionService } from '../session/session.service';
 import { CallsModule } from '../calls/calls.module';
 import { CommonModule } from '../common/common.module';
 import { AriModule } from '../ari/ari.module';
+import { CallEventEmitter } from './call-event-emitter';
+import { CallEventsHandler } from './call-events.handler';
+import { EmailWorkerService } from './email-worker.service';
 
 @Module({
   imports: [
@@ -23,7 +26,14 @@ import { AriModule } from '../ari/ari.module';
     forwardRef(() => AriModule),
   ],
   controllers: [VoiceController],
-  providers: [VoiceService, VoiceGateway, SessionService],
-  exports: [VoiceService],
+  providers: [
+    VoiceService,
+    VoiceGateway,
+    SessionService,
+    CallEventEmitter,
+    CallEventsHandler,
+    EmailWorkerService,
+  ],
+  exports: [VoiceService, CallEventEmitter],
 })
 export class VoiceModule {}

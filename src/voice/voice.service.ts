@@ -3854,7 +3854,7 @@
 // TWO possible outcomes:
 
 // OUTCOME 1 — They want to add more:
-// - Ask for the extra detail naturally. 
+// - Ask for the extra detail naturally.
 // - Listen to what they say and incorporate it into problem_description.
 // - After collecting the extra detail, acknowledge it briefly, then ask once more:
 //   "Got it, anything else or shall I send this through now?"
@@ -3978,9 +3978,9 @@ import { TradiesService } from '../tradies/tradies.service';
 import { SessionService } from '../session/session.service';
 import { CallsService } from '../calls/calls.service';
 import { AriRtpMediaService } from '../ari/ari-rtp-media.service';
-import { NotificationService } from 'src/common/notification.service';
 import { VoiceMlBuilder } from './voiceml.builder';
 import { Customer, CustomerDocument } from './Schema/customer.schema';
+import { CallEventEmitter } from './call-event-emitter';
 
 /**
  * RealtimeSession interface tracks the state of a single voice call.
@@ -4046,7 +4046,11 @@ export class VoiceService {
     const args = record.arguments;
     const callId = record.call_id;
     if (type !== 'function_call') return null;
-    if (typeof name !== 'string' || typeof args !== 'string' || typeof callId !== 'string') {
+    if (
+      typeof name !== 'string' ||
+      typeof args !== 'string' ||
+      typeof callId !== 'string'
+    ) {
       return null;
     }
     return { name, arguments: args, call_id: callId };
@@ -4061,12 +4065,24 @@ export class VoiceService {
     private readonly sessionService: SessionService,
     private readonly callsService: CallsService,
     private readonly ariRtpMediaService: AriRtpMediaService,
-    private readonly notificationService: NotificationService,
+    private readonly callEventEmitter: CallEventEmitter,
   ) { }
 
-  async handleIncomingWebhook(payload: Record<string, unknown>): Promise<string> {
-    const callSid = this.getStringValue(payload, ['callSid', 'CallSid', 'call_id', 'callId']);
-    const callerIdRaw = this.getStringValue(payload, ['from', 'From', 'callerId', 'callerID']);
+  async handleIncomingWebhook(
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const callSid = this.getStringValue(payload, [
+      'callSid',
+      'CallSid',
+      'call_id',
+      'callId',
+    ]);
+    const callerIdRaw = this.getStringValue(payload, [
+      'from',
+      'From',
+      'callerId',
+      'callerID',
+    ]);
     const didRaw = this.getStringValue(payload, ['to', 'To', 'did', 'DID']);
     const timestamp = new Date().toISOString();
 
@@ -4075,29 +4091,50 @@ export class VoiceService {
     );
 
     if (!callSid || !callerIdRaw || !didRaw) {
-      return VoiceMlBuilder.say('We could not process your call at this time. Please try again later.');
+      return VoiceMlBuilder.say(
+        'We could not process your call at this time. Please try again later.',
+      );
     }
 
     const callerID = this.ensureE164CallerId(callerIdRaw);
-    this.sessionService.createSession({ callSid, callerID, did: didRaw, timestamp });
+    this.sessionService.createSession({
+      callSid,
+      callerID,
+      did: didRaw,
+      timestamp,
+    });
 
     const didRecord = await this.didsService.findByDidNumber(didRaw);
     if (!didRecord) {
       this.logger.warn(`DID lookup failed for did=${didRaw}`);
-      return VoiceMlBuilder.say('We could not connect your call right now. Please try again later.');
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
     }
 
-    const tradie = await this.tradiesService.findById(didRecord.assignedTradieId);
+    const tradie = await this.tradiesService.findById(
+      didRecord.assignedTradieId,
+    );
     if (!tradie) {
-      this.logger.warn(`Tradie lookup failed for did=${didRaw} tradieId=${didRecord.assignedTradieId}`);
-      return VoiceMlBuilder.say('We could not connect your call right now. Please try again later.');
+      this.logger.warn(
+        `Tradie lookup failed for did=${didRaw} tradieId=${didRecord.assignedTradieId}`,
+      );
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
     }
 
-    this.logger.log(`DID lookup succeeded for did=${didRaw} tradie=${tradie.phoneNumber}`);
+    this.logger.log(
+      `DID lookup succeeded for did=${didRaw} tradie=${tradie.phoneNumber}`,
+    );
 
     if (!this.isE164(tradie.phoneNumber)) {
-      this.logger.warn(`Tradie phone number is not E164. tradie=${tradie.phoneNumber}`);
-      return VoiceMlBuilder.say('We could not connect your call right now. Please try again later.');
+      this.logger.warn(
+        `Tradie phone number is not E164. tradie=${tradie.phoneNumber}`,
+      );
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
     }
 
     this.sessionService.updateSession(callSid, {
@@ -4107,7 +4144,9 @@ export class VoiceService {
 
     const nextUri = this.buildAbsoluteUrl('/voice/callback');
     if (!nextUri) {
-      return VoiceMlBuilder.say('We could not connect your call right now. Please try again later.');
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
     }
     return VoiceMlBuilder.dialTradie({
       callerId: callerID,
@@ -4117,46 +4156,77 @@ export class VoiceService {
     });
   }
 
-  async handleCallbackWebhook(payload: Record<string, unknown>): Promise<string> {
-    const callSid = this.getStringValue(payload, ['callSid', 'CallSid', 'call_id', 'callId']);
-    const callStatusRaw = this.getStringValue(payload, ['callStatus', 'CallStatus', 'status']);
+  async handleCallbackWebhook(
+    payload: Record<string, unknown>,
+  ): Promise<string> {
+    const callSid = this.getStringValue(payload, [
+      'callSid',
+      'CallSid',
+      'call_id',
+      'callId',
+    ]);
+    const callStatusRaw = this.getStringValue(payload, [
+      'callStatus',
+      'CallStatus',
+      'status',
+    ]);
 
-    this.logger.log(`Callback webhook callSid=${callSid ?? 'unknown'} callStatus=${callStatusRaw ?? 'unknown'}`);
+    this.logger.log(
+      `Callback webhook callSid=${callSid ?? 'unknown'} callStatus=${callStatusRaw ?? 'unknown'}`,
+    );
 
     if (callSid && callStatusRaw) {
       this.sessionService.updateCallStatus(callSid, callStatusRaw);
     }
 
-    const session = callSid ? this.sessionService.getSession(callSid) : undefined;
+    const session = callSid
+      ? this.sessionService.getSession(callSid)
+      : undefined;
     const callerIdRaw =
       session?.callerID ||
-      this.getStringValue(payload, ['from', 'From', 'callerId', 'callerID']) || '';
+      this.getStringValue(payload, ['from', 'From', 'callerId', 'callerID']) ||
+      '';
     const did =
       session?.did ||
-      this.getStringValue(payload, ['to', 'To', 'did', 'DID']) || '';
+      this.getStringValue(payload, ['to', 'To', 'did', 'DID']) ||
+      '';
 
     const callStatus = (callStatusRaw || '').toUpperCase();
     if (callStatus !== 'COMPLETED') {
       await this.triggerAriFallback(callSid, callerIdRaw, did);
     }
 
-    return VoiceMlBuilder.say('Please hold while we connect you to our virtual assistant.');
+    return VoiceMlBuilder.say(
+      'Please hold while we connect you to our virtual assistant.',
+    );
   }
 
-  private async triggerAriFallback(callSid: string | undefined, callerIdRaw: string, did: string): Promise<void> {
+  private async triggerAriFallback(
+    callSid: string | undefined,
+    callerIdRaw: string,
+    did: string,
+  ): Promise<void> {
     const ariUrl = this.config.get<string>('ASTERISK_ARI_URL');
-    const username = this.config.get<string>('ASTERISK_ARI_USER') || this.config.get<string>('ASTERISK_ARI_USERNAME');
-    const password = this.config.get<string>('ASTERISK_ARI_PASS') || this.config.get<string>('ASTERISK_ARI_PASSWORD');
+    const username =
+      this.config.get<string>('ASTERISK_ARI_USER') ||
+      this.config.get<string>('ASTERISK_ARI_USERNAME');
+    const password =
+      this.config.get<string>('ASTERISK_ARI_PASS') ||
+      this.config.get<string>('ASTERISK_ARI_PASSWORD');
     const context = this.config.get<string>('ASTERISK_CONTEXT');
     const extension = this.config.get<string>('ASTERISK_EXTENSION');
     const app = this.config.get<string>('ASTERISK_ARI_APP');
 
     if (!ariUrl || !username || !password) {
-      this.logger.error(`ARI fallback skipped due to missing credentials callSid=${callSid ?? 'unknown'}`);
+      this.logger.error(
+        `ARI fallback skipped due to missing credentials callSid=${callSid ?? 'unknown'}`,
+      );
       return;
     }
     if (!extension || !context) {
-      this.logger.error(`ARI fallback skipped due to missing context/extension callSid=${callSid ?? 'unknown'}`);
+      this.logger.error(
+        `ARI fallback skipped due to missing context/extension callSid=${callSid ?? 'unknown'}`,
+      );
       return;
     }
 
@@ -4172,11 +4242,19 @@ export class VoiceService {
     if (app) params.app = app;
 
     try {
-      const response = await axios.post(url, null, { auth: { username, password }, params });
-      this.logger.log(`Fallback triggered callSid=${callSid ?? 'unknown'} callerID=${callerId} did=${did} ariStatus=${response.status}`);
+      const response = await axios.post(url, null, {
+        auth: { username, password },
+        params,
+      });
+      this.logger.log(
+        `Fallback triggered callSid=${callSid ?? 'unknown'} callerID=${callerId} did=${did} ariStatus=${response.status}`,
+      );
     } catch (error) {
-      const status = (error as { response?: { status?: number } }).response?.status;
-      this.logger.error(`Fallback trigger failed callSid=${callSid ?? 'unknown'} callerID=${callerId} did=${did} ariStatus=${status ?? 'unknown'}`);
+      const status = (error as { response?: { status?: number } }).response
+        ?.status;
+      this.logger.error(
+        `Fallback trigger failed callSid=${callSid ?? 'unknown'} callerID=${callerId} did=${did} ariStatus=${status ?? 'unknown'}`,
+      );
     }
   }
 
@@ -4195,7 +4273,9 @@ export class VoiceService {
     if (this.isE164(value)) return value;
     const fallback = this.config.get<string>('DEFAULT_CALLER_ID') || '';
     if (this.isE164(fallback)) {
-      this.logger.warn(`CallerID invalid, using DEFAULT_CALLER_ID instead. callerID=${value}`);
+      this.logger.warn(
+        `CallerID invalid, using DEFAULT_CALLER_ID instead. callerID=${value}`,
+      );
       return fallback;
     }
     this.logger.warn(`CallerID invalid and DEFAULT_CALLER_ID missing.`);
@@ -4206,7 +4286,10 @@ export class VoiceService {
     return /^\+[1-9]\d{7,14}$/.test(value);
   }
 
-  private getStringValue(payload: Record<string, unknown>, keys: string[]): string | undefined {
+  private getStringValue(
+    payload: Record<string, unknown>,
+    keys: string[],
+  ): string | undefined {
     for (const key of keys) {
       const value = payload[key];
       if (typeof value === 'string' && value.trim().length > 0) {
@@ -4230,8 +4313,10 @@ export class VoiceService {
     didNumber: string | null,
   ) {
     const callId = channel.id || channel.call_id || '';
-    const callerNumber = customerNumber || channel.caller?.number || channel.caller_number || null;
-    const calledNumber = didNumber || channel.connected?.number || channel.called_number || null;
+    const callerNumber =
+      customerNumber || channel.caller?.number || channel.caller_number || null;
+    const calledNumber =
+      didNumber || channel.connected?.number || channel.called_number || null;
 
     if (!callId) {
       this.logger.error('Voice Service handling call: missing call_id');
@@ -4257,7 +4342,11 @@ export class VoiceService {
 
       this.triggerGreeting(callId);
 
-      return { success: true, message: 'Voice session created successfully', call_id: callId };
+      return {
+        success: true,
+        message: 'Voice session created successfully',
+        call_id: callId,
+      };
     } catch (error) {
       this.logger.error(`Error in Voice call handling: ${error.message}`);
       return { success: false, error: error.message };
@@ -4284,16 +4373,22 @@ export class VoiceService {
     try {
       const session = this.sessions.get(callId);
       if (!session) {
-        this.logger.warn(`[${callId}] sendAudioToAri: no session — dropping audio`);
+        this.logger.warn(
+          `[${callId}] sendAudioToAri: no session — dropping audio`,
+        );
         return;
       }
 
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
-      this.logger.debug(`[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`);
+      this.logger.debug(
+        `[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`,
+      );
 
       const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
       const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
-      this.logger.debug(`[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, queueing`);
+      this.logger.debug(
+        `[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, queueing`,
+      );
 
       // Split into 20ms frames and enqueue
       let frameCount = 0;
@@ -4313,7 +4408,10 @@ export class VoiceService {
       // Kick the pacer if not running
       this.startOutboundPacer(callId);
     } catch (err) {
-      this.logger.error(`[${callId}] sendAudioToAri FAILED: ${(err as Error).message}`, err);
+      this.logger.error(
+        `[${callId}] sendAudioToAri FAILED: ${(err as Error).message}`,
+        err,
+      );
     }
   }
 
@@ -4345,7 +4443,9 @@ export class VoiceService {
       try {
         this.ariRtpMediaService.sendUlawToCall(callId, frame);
       } catch (err) {
-        this.logger.error(`[${callId}] Pacer send failed: ${(err as Error).message}`);
+        this.logger.error(
+          `[${callId}] Pacer send failed: ${(err as Error).message}`,
+        );
       }
     }, ULAW_FRAME_INTERVAL_MS);
   }
@@ -4375,7 +4475,9 @@ export class VoiceService {
     session.outboundFrameQueue = [];
     this.stopOutboundPacer(callId);
     if (dropped > 0) {
-      this.logger.log(`[${callId}] Outbound audio flushed: dropped ${dropped} queued frames`);
+      this.logger.log(
+        `[${callId}] Outbound audio flushed: dropped ${dropped} queued frames`,
+      );
     }
   }
 
@@ -4419,20 +4521,33 @@ export class VoiceService {
     return ulawByte;
   }
 
-  async createRealtimeSession(sessionId: string, onEvent: (event: any) => void): Promise<void> {
+  async createRealtimeSession(
+    sessionId: string,
+    onEvent: (event: any) => void,
+  ): Promise<void> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
-    const model = this.config.get<string>('OPENAI_REALTIME_MODEL') || 'gpt-realtime-2';
+    const model =
+      this.config.get<string>('OPENAI_REALTIME_MODEL') || 'gpt-realtime-2';
     const url = `wss://api.openai.com/v1/realtime?model=${model}`;
     const sessionStartedAtMs = Date.now();
 
     return new Promise((resolve, reject) => {
-      const ws = new WebSocket(url, { headers: { Authorization: `Bearer ${apiKey}` } });
-      this.instrumentClientWebSocketHandshake(sessionId, 'OpenAI', ws, sessionStartedAtMs);
+      const ws = new WebSocket(url, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      this.instrumentClientWebSocketHandshake(
+        sessionId,
+        'OpenAI',
+        ws,
+        sessionStartedAtMs,
+      );
 
       ws.on('open', () => {
         const openAiConnectedAtMs = Date.now();
         this.logger.log(`[${sessionId}] OpenAI Realtime WebSocket connected`);
-        this.logger.log(`[${sessionId}] Timing: OpenAI WS connected in ${openAiConnectedAtMs - sessionStartedAtMs}ms`);
+        this.logger.log(
+          `[${sessionId}] Timing: OpenAI WS connected in ${openAiConnectedAtMs - sessionStartedAtMs}ms`,
+        );
 
         const sessionUpdate = {
           type: 'session.update',
@@ -4498,7 +4613,9 @@ export class VoiceService {
       });
 
       ws.on('close', (code, reason) => {
-        this.logger.log(`[${sessionId}] OpenAI WebSocket closed: ${code} - ${reason}`);
+        this.logger.log(
+          `[${sessionId}] OpenAI WebSocket closed: ${code} - ${reason}`,
+        );
         this.stopOutboundPacer(sessionId);
         this.closeElevenLabsWs(sessionId);
         this.sessions.delete(sessionId);
@@ -4510,7 +4627,9 @@ export class VoiceService {
   sendAudio(sessionId: string, base64Audio: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    session.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: base64Audio }));
+    session.ws.send(
+      JSON.stringify({ type: 'input_audio_buffer.append', audio: base64Audio }),
+    );
   }
 
   sendInboundAudio(sessionId: string, ulawPayload: Buffer): void {
@@ -4521,12 +4640,16 @@ export class VoiceService {
     try {
       const pcm8k = this.convertUlawToSlin(ulawPayload);
       const pcm24k = this.upsample8kTo24k(pcm8k);
-      session.ws.send(JSON.stringify({
-        type: 'input_audio_buffer.append',
-        audio: pcm24k.toString('base64'),
-      }));
+      session.ws.send(
+        JSON.stringify({
+          type: 'input_audio_buffer.append',
+          audio: pcm24k.toString('base64'),
+        }),
+      );
     } catch (err) {
-      this.logger.error(`[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`);
+      this.logger.error(
+        `[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -4569,7 +4692,9 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
     session.greetingTriggeredAtMs = Date.now();
-    this.logger.log(`[${sessionId}] Timing: greeting trigger fired at ${session.greetingTriggeredAtMs - session.sessionStartedAtMs}ms from session start`);
+    this.logger.log(
+      `[${sessionId}] Timing: greeting trigger fired at ${session.greetingTriggeredAtMs - session.sessionStartedAtMs}ms from session start`,
+    );
     session.ws.send(JSON.stringify({ type: 'response.create' }));
   }
 
@@ -4577,9 +4702,12 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
-    if (!force && session.elevenLabsWs &&
+    if (
+      !force &&
+      session.elevenLabsWs &&
       (session.elevenLabsWs.readyState === WebSocket.OPEN ||
-        session.elevenLabsWs.readyState === WebSocket.CONNECTING)) {
+        session.elevenLabsWs.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
 
@@ -4590,18 +4718,31 @@ export class VoiceService {
     const wsUrl = `wss://api.elevenlabs.io/v1/text-to-speech/${voiceId}/multi-stream-input?model_id=eleven_flash_v2_5&output_format=pcm_16000&inactivity_timeout=180`;
 
     const elWs = new WebSocket(wsUrl);
-    this.instrumentClientWebSocketHandshake(sessionId, 'ElevenLabs', elWs, session.sessionStartedAtMs);
+    this.instrumentClientWebSocketHandshake(
+      sessionId,
+      'ElevenLabs',
+      elWs,
+      session.sessionStartedAtMs,
+    );
 
     elWs.on('open', () => {
       this.logger.log(`[${sessionId}] ElevenLabs WebSocket connected`);
       session.elevenLabsConnectedAtMs = Date.now();
-      this.logger.log(`[${sessionId}] Timing: ElevenLabs WS connected in ${session.elevenLabsConnectedAtMs - session.sessionStartedAtMs}ms`);
+      this.logger.log(
+        `[${sessionId}] Timing: ElevenLabs WS connected in ${session.elevenLabsConnectedAtMs - session.sessionStartedAtMs}ms`,
+      );
 
-      elWs.send(JSON.stringify({
-        text: ' ',
-        voice_settings: { stability: 0.4, similarity_boost: 0.75, speed: 1.0 },
-        xi_api_key: apiKey,
-      }));
+      elWs.send(
+        JSON.stringify({
+          text: ' ',
+          voice_settings: {
+            stability: 0.4,
+            similarity_boost: 0.75,
+            speed: 1.0,
+          },
+          xi_api_key: apiKey,
+        }),
+      );
 
       if (session.elevenLabsWs === elWs) {
         session.elevenLabsReady = true;
@@ -4621,41 +4762,63 @@ export class VoiceService {
             `[${sessionId}] EL chunk received: contextId=${msgContextId} ` +
             `currentCtx=${session.currentContextId} ` +
             `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
-            `audioBytes=${Buffer.from(msg.audio, 'base64').length}`
+            `audioBytes=${Buffer.from(msg.audio, 'base64').length}`,
           );
-          if (session.currentContextId && msgContextId !== session.currentContextId) {
-            this.logger.debug(`[${sessionId}] Discarding late audio chunk from old context: ${msgContextId}`);
+          if (
+            session.currentContextId &&
+            msgContextId !== session.currentContextId
+          ) {
+            this.logger.debug(
+              `[${sessionId}] Discarding late audio chunk from old context: ${msgContextId}`,
+            );
             return;
           }
 
           if (!session.firstAudioDeltaReceivedForContext) {
             session.firstAudioDeltaReceivedForContext = true;
             const now = Date.now();
-            const fromSpeechStopped = session.lastSpeechStoppedAtMs ? `${now - session.lastSpeechStoppedAtMs}ms` : 'N/A';
-            const fromResponseCreated = session.lastResponseCreatedAtMs ? `${now - session.lastResponseCreatedAtMs}ms` : 'N/A';
-            const fromFirstTextDelta = session.lastTextDeltaReceivedAtMs ? `${now - session.lastTextDeltaReceivedAtMs}ms` : 'N/A';
+            const fromSpeechStopped = session.lastSpeechStoppedAtMs
+              ? `${now - session.lastSpeechStoppedAtMs}ms`
+              : 'N/A';
+            const fromResponseCreated = session.lastResponseCreatedAtMs
+              ? `${now - session.lastResponseCreatedAtMs}ms`
+              : 'N/A';
+            const fromFirstTextDelta = session.lastTextDeltaReceivedAtMs
+              ? `${now - session.lastTextDeltaReceivedAtMs}ms`
+              : 'N/A';
             this.logger.log(
               `[${sessionId}] Turn Latency Breakdown:\n` +
               `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
               `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
-              `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`
+              `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`,
             );
           }
 
           if (!session.firstAudioDeltaLogged) {
             const firstAudioAtMs = Date.now();
             session.firstAudioDeltaLogged = true;
-            const openAiMs = session.openAiConnectedAtMs ? session.openAiConnectedAtMs - session.sessionStartedAtMs : -1;
-            const elevenLabsMs = session.elevenLabsConnectedAtMs ? session.elevenLabsConnectedAtMs - session.sessionStartedAtMs : -1;
-            const greetingMs = session.greetingTriggeredAtMs ? session.greetingTriggeredAtMs - session.sessionStartedAtMs : -1;
-            const responseCreatedAfterGreetingMs = session.firstResponseCreatedAtMs && session.greetingTriggeredAtMs
-              ? session.firstResponseCreatedAtMs - session.greetingTriggeredAtMs : -1;
-            const firstAudioAfterResponseCreatedMs = session.firstResponseCreatedAtMs
-              ? firstAudioAtMs - session.firstResponseCreatedAtMs : -1;
+            const openAiMs = session.openAiConnectedAtMs
+              ? session.openAiConnectedAtMs - session.sessionStartedAtMs
+              : -1;
+            const elevenLabsMs = session.elevenLabsConnectedAtMs
+              ? session.elevenLabsConnectedAtMs - session.sessionStartedAtMs
+              : -1;
+            const greetingMs = session.greetingTriggeredAtMs
+              ? session.greetingTriggeredAtMs - session.sessionStartedAtMs
+              : -1;
+            const responseCreatedAfterGreetingMs =
+              session.firstResponseCreatedAtMs && session.greetingTriggeredAtMs
+                ? session.firstResponseCreatedAtMs -
+                session.greetingTriggeredAtMs
+                : -1;
+            const firstAudioAfterResponseCreatedMs =
+              session.firstResponseCreatedAtMs
+                ? firstAudioAtMs - session.firstResponseCreatedAtMs
+                : -1;
             this.logger.log(
               `[${sessionId}] Timing: first audio delta at ${firstAudioAtMs - session.sessionStartedAtMs}ms ` +
               `(openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, ` +
-              `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`
+              `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
             );
           }
           session.onEvent({ type: 'audio-delta', delta: msg.audio });
@@ -4668,7 +4831,9 @@ export class VoiceService {
     });
 
     elWs.on('close', (code, reason) => {
-      this.logger.warn(`[${sessionId}] ElevenLabs WS closed: code=${code} reason=${reason?.toString()}`);
+      this.logger.warn(
+        `[${sessionId}] ElevenLabs WS closed: code=${code} reason=${reason?.toString()}`,
+      );
       clearInterval(keepaliveInterval);
       if (session.elevenLabsWs === elWs) {
         session.elevenLabsReady = false;
@@ -4677,7 +4842,12 @@ export class VoiceService {
 
     const keepaliveInterval = setInterval(() => {
       const s = this.sessions.get(sessionId);
-      if (!s || !s.elevenLabsWs || s.elevenLabsWs !== elWs || s.elevenLabsWs.readyState !== WebSocket.OPEN) {
+      if (
+        !s ||
+        !s.elevenLabsWs ||
+        s.elevenLabsWs !== elWs ||
+        s.elevenLabsWs.readyState !== WebSocket.OPEN
+      ) {
         clearInterval(keepaliveInterval);
         return;
       }
@@ -4700,7 +4870,9 @@ export class VoiceService {
     const wsWithReq = ws as WebSocket & { _req?: ClientRequest };
     const req = wsWithReq._req;
     if (!req) {
-      this.logger.warn(`[${sessionId}] Timing: ${provider} request object not available for low-level socket timings`);
+      this.logger.warn(
+        `[${sessionId}] Timing: ${provider} request object not available for low-level socket timings`,
+      );
       return;
     }
 
@@ -4708,48 +4880,79 @@ export class VoiceService {
     const attachSocketHooks = (socket: Socket): void => {
       if (socketHooksAttached) return;
       socketHooksAttached = true;
-      socket.once('lookup', () => this.logger.log(`[${sessionId}] Timing: ${provider} DNS lookup completed in ${Date.now() - startedAtMs}ms`));
-      socket.once('connect', () => this.logger.log(`[${sessionId}] Timing: ${provider} TCP connect completed in ${Date.now() - startedAtMs}ms`));
-      (socket as TLSSocket).once('secureConnect', () => this.logger.log(`[${sessionId}] Timing: ${provider} TLS handshake completed in ${Date.now() - startedAtMs}ms`));
+      socket.once('lookup', () =>
+        this.logger.log(
+          `[${sessionId}] Timing: ${provider} DNS lookup completed in ${Date.now() - startedAtMs}ms`,
+        ),
+      );
+      socket.once('connect', () =>
+        this.logger.log(
+          `[${sessionId}] Timing: ${provider} TCP connect completed in ${Date.now() - startedAtMs}ms`,
+        ),
+      );
+      (socket as TLSSocket).once('secureConnect', () =>
+        this.logger.log(
+          `[${sessionId}] Timing: ${provider} TLS handshake completed in ${Date.now() - startedAtMs}ms`,
+        ),
+      );
     };
 
     if (req.socket) attachSocketHooks(req.socket);
     req.once('socket', (socket: Socket) => attachSocketHooks(socket));
-    ws.on('upgrade', () => this.logger.log(`[${sessionId}] Timing: ${provider} WS upgrade completed in ${Date.now() - startedAtMs}ms`));
-    ws.on('open', () => this.logger.log(`[${sessionId}] Timing: ${provider} WS open event at ${Date.now() - startedAtMs}ms`));
+    ws.on('upgrade', () =>
+      this.logger.log(
+        `[${sessionId}] Timing: ${provider} WS upgrade completed in ${Date.now() - startedAtMs}ms`,
+      ),
+    );
+    ws.on('open', () =>
+      this.logger.log(
+        `[${sessionId}] Timing: ${provider} WS open event at ${Date.now() - startedAtMs}ms`,
+      ),
+    );
   }
 
   private sendTextToElevenLabs(sessionId: string, text: string): void {
     const session = this.sessions.get(sessionId);
-    if (!session?.elevenLabsReady || session.elevenLabsWs?.readyState !== WebSocket.OPEN) {
+    if (
+      !session?.elevenLabsReady ||
+      session.elevenLabsWs?.readyState !== WebSocket.OPEN
+    ) {
       this.logger.warn(
         `[${sessionId}] sendTextToElevenLabs DROPPED: ` +
         `ready=${session?.elevenLabsReady} ` +
         `wsState=${session?.elevenLabsWs?.readyState} ` +
-        `text="${text?.substring(0, 30)}"`
+        `text="${text?.substring(0, 30)}"`,
       );
       return;
     }
     if (!session.currentContextId) {
       session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     }
-    session.elevenLabsWs.send(JSON.stringify({
-      text,
-      context_id: session.currentContextId,
-      try_trigger_generation: true,
-    }));
+    session.elevenLabsWs.send(
+      JSON.stringify({
+        text,
+        context_id: session.currentContextId,
+        try_trigger_generation: true,
+      }),
+    );
   }
 
   private flushElevenLabsStream(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    if (session.elevenLabsWs && session.elevenLabsWs.readyState === WebSocket.OPEN && session.currentContextId) {
+    if (
+      session.elevenLabsWs &&
+      session.elevenLabsWs.readyState === WebSocket.OPEN &&
+      session.currentContextId
+    ) {
       try {
-        session.elevenLabsWs.send(JSON.stringify({
-          text: ' ',
-          context_id: session.currentContextId,
-          flush: true,
-        }));
+        session.elevenLabsWs.send(
+          JSON.stringify({
+            text: ' ',
+            context_id: session.currentContextId,
+            flush: true,
+          }),
+        );
       } catch { }
     }
   }
@@ -4758,10 +4961,14 @@ export class VoiceService {
     const session = this.sessions.get(sessionId);
     if (session?.elevenLabsWs) {
       try {
-        if (session.elevenLabsWs.readyState === WebSocket.CONNECTING) session.elevenLabsWs.terminate();
-        else if (session.elevenLabsWs.readyState === WebSocket.OPEN) session.elevenLabsWs.close();
+        if (session.elevenLabsWs.readyState === WebSocket.CONNECTING)
+          session.elevenLabsWs.terminate();
+        else if (session.elevenLabsWs.readyState === WebSocket.OPEN)
+          session.elevenLabsWs.close();
       } catch (err) {
-        this.logger.warn(`[${sessionId}] Error closing ElevenLabs WS: ${err.message}`);
+        this.logger.warn(
+          `[${sessionId}] Error closing ElevenLabs WS: ${err.message}`,
+        );
       }
       session.elevenLabsWs = null;
       session.elevenLabsReady = false;
@@ -4770,7 +4977,10 @@ export class VoiceService {
     }
   }
 
-  private async handleRealtimeEvent(sessionId: string, event: any): Promise<void> {
+  private async handleRealtimeEvent(
+    sessionId: string,
+    event: any,
+  ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
@@ -4785,23 +4995,34 @@ export class VoiceService {
 
         if (session.lastSpeechStoppedAtMs) {
           const vadDelay = Date.now() - session.lastSpeechStoppedAtMs;
-          this.logger.log(`[${sessionId}] Timing: VAD (silence detection) + network handshake delay took ${vadDelay}ms`);
+          this.logger.log(
+            `[${sessionId}] Timing: VAD (silence detection) + network handshake delay took ${vadDelay}ms`,
+          );
         }
 
         if (!session.firstResponseCreatedAtMs) {
           session.firstResponseCreatedAtMs = Date.now();
-          const fromSessionStart = session.firstResponseCreatedAtMs - session.sessionStartedAtMs;
+          const fromSessionStart =
+            session.firstResponseCreatedAtMs - session.sessionStartedAtMs;
           const fromGreeting = session.greetingTriggeredAtMs
-            ? session.firstResponseCreatedAtMs - session.greetingTriggeredAtMs : -1;
-          this.logger.log(`[${sessionId}] Timing: first response.created at ${fromSessionStart}ms (after greeting=${fromGreeting}ms)`);
+            ? session.firstResponseCreatedAtMs - session.greetingTriggeredAtMs
+            : -1;
+          this.logger.log(
+            `[${sessionId}] Timing: first response.created at ${fromSessionStart}ms (after greeting=${fromGreeting}ms)`,
+          );
         }
 
-        if (session.currentContextId && session.elevenLabsWs?.readyState === WebSocket.OPEN) {
+        if (
+          session.currentContextId &&
+          session.elevenLabsWs?.readyState === WebSocket.OPEN
+        ) {
           try {
-            session.elevenLabsWs.send(JSON.stringify({
-              context_id: session.currentContextId,
-              close_context: true,
-            }));
+            session.elevenLabsWs.send(
+              JSON.stringify({
+                context_id: session.currentContextId,
+                close_context: true,
+              }),
+            );
           } catch { }
         }
 
@@ -4817,7 +5038,8 @@ export class VoiceService {
           if (Array.isArray(outputs)) {
             for (const item of outputs) {
               const functionCall = this.toFunctionCallPayload(item);
-              if (functionCall) await this.handleFunctionCall(sessionId, functionCall);
+              if (functionCall)
+                await this.handleFunctionCall(sessionId, functionCall);
             }
           }
         }
@@ -4829,9 +5051,12 @@ export class VoiceService {
           `[${sessionId}] Text delta: elevenLabsReady=${session.elevenLabsReady} ` +
           `wsState=${session.elevenLabsWs?.readyState} ` +
           `bufferSize=${session.textBuffer.length} ` +
-          `text="${event.delta?.substring(0, 20)}..."`
+          `text="${event.delta?.substring(0, 20)}..."`,
         );
-        if (!session.elevenLabsReady && session.elevenLabsWs?.readyState === WebSocket.OPEN) {
+        if (
+          !session.elevenLabsReady &&
+          session.elevenLabsWs?.readyState === WebSocket.OPEN
+        ) {
           session.elevenLabsReady = true;
         }
 
@@ -4839,8 +5064,11 @@ export class VoiceService {
           session.isFirstTextDeltaOfTurn = false;
           session.lastTextDeltaReceivedAtMs = Date.now();
           if (session.lastResponseCreatedAtMs) {
-            const timeToFirstText = Date.now() - session.lastResponseCreatedAtMs;
-            this.logger.log(`[${sessionId}] Timing: OpenAI response generation delay (time to first text) took ${timeToFirstText}ms`);
+            const timeToFirstText =
+              Date.now() - session.lastResponseCreatedAtMs;
+            this.logger.log(
+              `[${sessionId}] Timing: OpenAI response generation delay (time to first text) took ${timeToFirstText}ms`,
+            );
           }
         }
 
@@ -4871,19 +5099,30 @@ export class VoiceService {
           try {
             session.ws.send(JSON.stringify({ type: 'response.cancel' }));
           } catch (err) {
-            this.logger.warn(`[${sessionId}] Cancel failed (already finished): ${err.message}`);
+            this.logger.warn(
+              `[${sessionId}] Cancel failed (already finished): ${err.message}`,
+            );
           }
         }
 
-        if (session.currentContextId && session.elevenLabsWs?.readyState === WebSocket.OPEN) {
+        if (
+          session.currentContextId &&
+          session.elevenLabsWs?.readyState === WebSocket.OPEN
+        ) {
           try {
-            this.logger.log(`[${sessionId}] Closing ElevenLabs context: ${session.currentContextId}`);
-            session.elevenLabsWs.send(JSON.stringify({
-              context_id: session.currentContextId,
-              close_context: true,
-            }));
+            this.logger.log(
+              `[${sessionId}] Closing ElevenLabs context: ${session.currentContextId}`,
+            );
+            session.elevenLabsWs.send(
+              JSON.stringify({
+                context_id: session.currentContextId,
+                close_context: true,
+              }),
+            );
           } catch (err) {
-            this.logger.warn(`[${sessionId}] Close context failed: ${err.message}`);
+            this.logger.warn(
+              `[${sessionId}] Close context failed: ${err.message}`,
+            );
           }
         }
 
@@ -4894,11 +5133,16 @@ export class VoiceService {
 
       case 'input_audio_buffer.speech_stopped':
         session.lastSpeechStoppedAtMs = Date.now();
-        this.logger.log(`[${sessionId}] User finished speaking (VAD triggered speech_stopped event)`);
+        this.logger.log(
+          `[${sessionId}] User finished speaking (VAD triggered speech_stopped event)`,
+        );
         break;
 
       case 'conversation.item.input_audio_transcription.completed':
-        session.onEvent({ type: 'user-transcript', transcript: event.transcript });
+        session.onEvent({
+          type: 'user-transcript',
+          transcript: event.transcript,
+        });
         break;
 
       case 'response.function_call_arguments.done':
@@ -4909,42 +5153,55 @@ export class VoiceService {
         {
           const typedEvent = event as { item?: unknown };
           const functionCall = this.toFunctionCallPayload(typedEvent.item);
-          if (functionCall) await this.handleFunctionCall(sessionId, functionCall);
+          if (functionCall)
+            await this.handleFunctionCall(sessionId, functionCall);
         }
         break;
 
       case 'error':
-        this.logger.error(`[${sessionId}] OpenAI Error: ${JSON.stringify(event.error)}`);
+        this.logger.error(
+          `[${sessionId}] OpenAI Error: ${JSON.stringify(event.error)}`,
+        );
         break;
     }
   }
 
-  private async handleFunctionCall(sessionId: string, event: any): Promise<void> {
+  private async handleFunctionCall(
+    sessionId: string,
+    event: any,
+  ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
     if (event.name === 'save_customer_booking') {
       const typedEvent = event as { call_id?: unknown };
-      const callId = typeof typedEvent.call_id === 'string' ? typedEvent.call_id : null;
+      const callId =
+        typeof typedEvent.call_id === 'string' ? typedEvent.call_id : null;
 
       if (callId && session.processedFunctionCallIds.has(callId)) {
-        this.logger.debug(`[${sessionId}] Duplicate function call ignored: ${callId}`);
+        this.logger.debug(
+          `[${sessionId}] Duplicate function call ignored: ${callId}`,
+        );
         return;
       }
       if (callId) session.processedFunctionCallIds.add(callId);
 
       try {
         const args = JSON.parse(event.arguments);
-        this.logger.log(`[${sessionId}] Saving Booking to MongoDB for: ${args.name}`);
+        const phone = args.phone || session.customerNumber;
+        this.logger.log(
+          `[${sessionId}] Saving Booking to MongoDB for: ${args.name}`,
+        );
 
         const serviceType = args.serviceType ?? args.service_type;
-        const problemDescription = args.problemDescription ?? args.problem_description;
+        const problemDescription =
+          args.problemDescription ?? args.problem_description;
         const preferredTime = args.preferredTime ?? args.preferred_time;
         const summaryText = args.summary || `Tradie Booking: ${serviceType}`;
 
         const customer = await this.customerModel.create({
           name: args.name,
-          phone: args.phone,
+          phone,
           address: args.address,
           urgency: args.urgency,
           serviceType,
@@ -4953,13 +5210,15 @@ export class VoiceService {
           summary: summaryText,
         });
 
-        this.logger.log(`[${sessionId}] SUCCESS: Customer saved with ID ${customer._id}`);
+        this.logger.log(
+          `[${sessionId}] SUCCESS: Customer saved with ID ${customer._id}`,
+        );
 
         const enfonicaCallId = session.enfonicaCallId;
         if (enfonicaCallId) {
           await this.callsService.updateCallSummary(enfonicaCallId, {
             name: args.name,
-            phone: args.phone,
+            phone,
             address: args.address,
             urgency: args.urgency,
             serviceType,
@@ -4967,44 +5226,21 @@ export class VoiceService {
             preferredTime,
             summary: summaryText,
           });
-
-          const callRecord = await this.callsService.findByEnfonicaCallId(enfonicaCallId);
-          if (callRecord?.tradieId) {
-            const tradie = await this.tradiesService.findById(String(callRecord.tradieId));
-            const preference = tradie?.notificationPreference;
-            if (tradie?.email && (preference === 'email' || preference === 'both')) {
-              const customerNumber = session.customerNumber || '';
-              const didNumber = session.didNumber || '';
-              const createdAt = (callRecord as any)?.createdAt || '';
-              await this.notificationService.sendEmail(
-                tradie.email,
-                'Missed Call Summary',
-                `Customer Number: ${customerNumber}
-DID Number: ${didNumber}
-Time: ${createdAt}
-Summary: ${summaryText}
-
-Full Details:
-Name: ${args.name}
-Phone: ${args.phone}
-Address: ${args.address}
-Service Type: ${serviceType}
-Urgency: ${args.urgency}
-Problem: ${problemDescription}
-Preferred Time: ${preferredTime}`,
-              );
-            }
-          }
         }
 
-        session.ws.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'function_call_output',
-            call_id: event.call_id,
-            output: JSON.stringify({ success: true, message: 'Saved to Database.' }),
-          },
-        }));
+        session.ws.send(
+          JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+              type: 'function_call_output',
+              call_id: event.call_id,
+              output: JSON.stringify({
+                success: true,
+                message: 'Saved to Database.',
+              }),
+            },
+          }),
+        );
 
         session.ws.send(JSON.stringify({ type: 'response.create' }));
         session.onEvent({ type: 'booking-saved', data: args });
@@ -5071,9 +5307,7 @@ AFTER GETTING NAME → Warm greeting, then ask what's going on. Let THEM tell yo
 
 AFTER THEY DESCRIBE THE PROBLEM → React naturally to what they said. Show you understand. Then lead into collecting remaining details.
 
-AFTER GETTING PHONE NUMBER → Brief acknowledgment, then ask for address naturally.
-
-AFTER GETTING ADDRESS → Brief acknowledgment, then ask about urgency.
+AFTER GETTING PHONE NUMBER → Brief acknowledgment, then ask for address naturally. Brief acknowledgment, then ask about urgency.
 
 AFTER GETTING URGENCY (low/medium severity only) → Respond based on what they said — acknowledge if it's pressing, stay relaxed if they're relaxed. HIGH SEVERITY: this step does not happen — urgency is already known.
 
@@ -5168,7 +5402,7 @@ You are ONLY here to help with tradie bookings and trade-related work. You have 
 
 ### THE BOOKING FLOW ###
 
-You must populate these 7 booking fields before save_customer_booking: name, phone, address, urgency, service type, problem description, preferred time.
+You must populate these 6 booking fields before save_customer_booking: name, address, urgency, service type, problem description, preferred time.
 Do it conversationally — not like a form. And critically: the PROBLEM CLARITY & SEVERITY SCORING rules above govern what you skip and how you behave at every step.
 
 For HIGH SEVERITY calls, fields can be populated by inference instead of direct questions:
@@ -5188,29 +5422,12 @@ Greet them by name and ask what's going on. Let them tell you. This is where you
 Pick up whatever details they mention — problem, service type, urgency, address — and don't ask for things they already told you.
 
 ─────────────────────────────────────────────
-STEP 3 — PHONE
-─────────────────────────────────────────────
-Always collect. Ask for their best contact number.
-Once they give it, read it back digit by digit — e.g. "So that's 0-4-1-2-3-4-5-6-7-8 — that right?"
-Wait for explicit confirmation. If they correct a digit, read the full number back again and wait again.
-Do NOT move on until confirmed.
-
-CRITICAL — HOW TO READ PHONE NUMBERS BACK:
-- ALWAYS say each digit as a separate spoken word in English. No exceptions.
-- Say: "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"
-- NEVER group digits into pairs or larger numbers. Never say "forty-one" or "twelve" — say "four one" and "one two".
-- NEVER use any non-English word, sound, or number system when reading digits. English digit words only.
-- Format: read every single digit individually with a natural short pause between each one.
-- Example: 0412345678 → "zero, four, one, two, three, four, five, six, seven, eight — that right?"
-- If you catch yourself about to say a number in any other language, STOP and say the English word instead.
-
-─────────────────────────────────────────────
-STEP 4 — ADDRESS
+STEP 3 — ADDRESS
 ─────────────────────────────────────────────
 Always collect. Ask where the job is (skip if they already mentioned it).
 
 ─────────────────────────────────────────────
-STEP 5 — URGENCY
+STEP 4 — URGENCY
 ─────────────────────────────────────────────
 IF SEVERITY IS HIGH: SKIP THIS QUESTION ENTIRELY.
 You already know it's urgent from what they described. Asking "how urgent is it?" to someone whose wall is falling down is tone-deaf. Set urgency = "urgent" in the booking and move on.
@@ -5218,7 +5435,7 @@ You already know it's urgent from what they described. Asking "how urgent is it?
 IF SEVERITY IS LOW OR MEDIUM: Ask how urgent it is for them. Take their answer and use it.
 
 ─────────────────────────────────────────────
-STEP 6 — SERVICE TYPE
+STEP 5 — SERVICE TYPE
 ─────────────────────────────────────────────
 IF SEVERITY IS HIGH: SKIP THIS QUESTION ENTIRELY.
 Infer the service type from what they described and fill it in yourself. Do not ask the caller to diagnose their own emergency.
@@ -5229,7 +5446,7 @@ IF SERVICE TYPE WAS ALREADY MENTIONED BY THE CALLER: SKIP. Use what they said.
 IF SEVERITY IS LOW OR MEDIUM AND IT'S GENUINELY UNCLEAR: Do NOT ask what kind of work they need. Instead, ask ONE question about their specific situation using their exact words. Infer the service type yourself from their answer. If still unclear, use 'general home repair — to be assessed'
 
 ─────────────────────────────────────────────
-STEP 7 — PROBLEM FOLLOW-UP
+STEP 6 — PROBLEM FOLLOW-UP
 ─────────────────────────────────────────────
 IF SEVERITY IS HIGH: SKIP THIS ENTIRELY. You have enough. Don't make them explain more than they already have.
 
@@ -5238,7 +5455,7 @@ IF SEVERITY IS LOW OR MEDIUM AND CLARITY IS CLEAR: Skip unless one specific ques
 IF SEVERITY IS LOW OR MEDIUM AND CLARITY IS UNCLEAR: Ask ONE question rooted in their exact words. See PROBLEM CLARITY & SEVERITY SCORING for the full rules.
 
 ─────────────────────────────────────────────
-STEP 8 — PREFERRED TIME
+STEP 7 — PREFERRED TIME
 ─────────────────────────────────────────────
 IF SEVERITY IS HIGH: Reframe this. Don't say "when works best for you?" — that implies a scheduled visit, which isn't how emergencies work. Instead, say something like: "I'll get this through now and someone will be in touch as soon as possible." Then move to FINAL ACTION. Skip asking for a preferred time entirely and set preferred_time = "ASAP" in the booking.
 
@@ -5258,7 +5475,7 @@ Follow these steps IN ORDER. Do not skip any step.
 ─────────────────────────────────────────────
 STEP A — ASK THE "ANYTHING TO ADD?" QUESTION
 ─────────────────────────────────────────────
-Once you have all 7 details, you MUST ask this question FIRST — before doing anything else:
+Once you have all 6 details, you MUST ask this question FIRST — before doing anything else:
 
   "Perfect, I've got all the details. Is there anything else you'd like to add before I send this through?"
 
@@ -5352,7 +5569,14 @@ If save_customer_booking has NOT been called before any attempt to close or end 
           problem_description: { type: 'string' },
           preferred_time: { type: 'string' },
         },
-        required: ['name', 'phone', 'address', 'urgency', 'service_type', 'problem_description', 'preferred_time'],
+        required: [
+          'name',
+          'address',
+          'urgency',
+          'service_type',
+          'problem_description',
+          'preferred_time',
+        ],
       },
     };
   }
@@ -5363,6 +5587,18 @@ If save_customer_booking has NOT been called before any attempt to close or end 
       this.stopOutboundPacer(sessionId);
       this.closeElevenLabsWs(sessionId);
       session.ws.close();
+
+      if (session.enfonicaCallId) {
+        this.logger.log(`[${sessionId}] Emitting call.ended for enfonicaCallId: ${session.enfonicaCallId}`);
+        this.callEventEmitter.emit('call.ended', {
+          enfonicaCallId: session.enfonicaCallId,
+          customerNumber: session.customerNumber || '',
+          didNumber: session.didNumber || '',
+          startTime: new Date(session.sessionStartedAtMs),
+          endTime: new Date(),
+        });
+      }
+
       this.sessions.delete(sessionId);
       this.logger.log(`[${sessionId}] Active Call Disconnected`);
     }

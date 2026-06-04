@@ -12,4 +12,4 @@ import { TradiesService } from './tradies.service';
   providers: [TradiesService],
   exports: [TradiesService],
 })
-export class TradiesModule { }
+export class TradiesModule {}

@@ -16,4 +16,4 @@ import { Tradie, TradieSchema } from '../tradies/schemas/tradie.schema';
   providers: [DidsService],
   exports: [DidsService],
 })
-export class DidsModule { }
+export class DidsModule {}

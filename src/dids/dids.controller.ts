@@ -20,7 +20,7 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 @ApiBearerAuth()
 @Controller('dids')
 export class DidsController {
-  constructor(private readonly didsService: DidsService) { }
+  constructor(private readonly didsService: DidsService) {}
 
   @Post()
   create(@Request() req, @Body() dto: CreateDidDto) {
