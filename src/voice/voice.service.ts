@@ -4066,7 +4066,7 @@ export class VoiceService {
     private readonly callsService: CallsService,
     private readonly ariRtpMediaService: AriRtpMediaService,
     private readonly callEventEmitter: CallEventEmitter,
-  ) { }
+  ) {}
 
   async handleIncomingWebhook(
     payload: Record<string, unknown>,
@@ -4402,7 +4402,7 @@ export class VoiceService {
 
       this.logger.debug(
         `[${callId}] sendAudioToAri: queued ${frameCount} frames, ` +
-        `queueDepth=${session.outboundFrameQueue.length}`,
+          `queueDepth=${session.outboundFrameQueue.length}`,
       );
 
       // Kick the pacer if not running
@@ -4760,9 +4760,9 @@ export class VoiceService {
           const msgContextId = msg.contextId || msg.context_id;
           this.logger.debug(
             `[${sessionId}] EL chunk received: contextId=${msgContextId} ` +
-            `currentCtx=${session.currentContextId} ` +
-            `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
-            `audioBytes=${Buffer.from(msg.audio, 'base64').length}`,
+              `currentCtx=${session.currentContextId} ` +
+              `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
+              `audioBytes=${Buffer.from(msg.audio, 'base64').length}`,
           );
           if (
             session.currentContextId &&
@@ -4788,9 +4788,9 @@ export class VoiceService {
               : 'N/A';
             this.logger.log(
               `[${sessionId}] Turn Latency Breakdown:\n` +
-              `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
-              `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
-              `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`,
+                `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
+                `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
+                `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`,
             );
           }
 
@@ -4809,7 +4809,7 @@ export class VoiceService {
             const responseCreatedAfterGreetingMs =
               session.firstResponseCreatedAtMs && session.greetingTriggeredAtMs
                 ? session.firstResponseCreatedAtMs -
-                session.greetingTriggeredAtMs
+                  session.greetingTriggeredAtMs
                 : -1;
             const firstAudioAfterResponseCreatedMs =
               session.firstResponseCreatedAtMs
@@ -4817,13 +4817,13 @@ export class VoiceService {
                 : -1;
             this.logger.log(
               `[${sessionId}] Timing: first audio delta at ${firstAudioAtMs - session.sessionStartedAtMs}ms ` +
-              `(openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, ` +
-              `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
+                `(openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, ` +
+                `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
             );
           }
           session.onEvent({ type: 'audio-delta', delta: msg.audio });
         }
-      } catch (err) { }
+      } catch (err) {}
     });
 
     elWs.on('error', (err) => {
@@ -4855,7 +4855,7 @@ export class VoiceService {
         const payload: any = { text: ' ' };
         if (s.currentContextId) payload.context_id = s.currentContextId;
         s.elevenLabsWs.send(JSON.stringify(payload));
-      } catch { }
+      } catch {}
     }, 10000);
 
     session.elevenLabsWs = elWs;
@@ -4919,9 +4919,9 @@ export class VoiceService {
     ) {
       this.logger.warn(
         `[${sessionId}] sendTextToElevenLabs DROPPED: ` +
-        `ready=${session?.elevenLabsReady} ` +
-        `wsState=${session?.elevenLabsWs?.readyState} ` +
-        `text="${text?.substring(0, 30)}"`,
+          `ready=${session?.elevenLabsReady} ` +
+          `wsState=${session?.elevenLabsWs?.readyState} ` +
+          `text="${text?.substring(0, 30)}"`,
       );
       return;
     }
@@ -4953,7 +4953,7 @@ export class VoiceService {
             flush: true,
           }),
         );
-      } catch { }
+      } catch {}
     }
   }
 
@@ -5023,7 +5023,7 @@ export class VoiceService {
                 close_context: true,
               }),
             );
-          } catch { }
+          } catch {}
         }
 
         session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -5049,9 +5049,9 @@ export class VoiceService {
       case 'response.text.delta':
         this.logger.debug(
           `[${sessionId}] Text delta: elevenLabsReady=${session.elevenLabsReady} ` +
-          `wsState=${session.elevenLabsWs?.readyState} ` +
-          `bufferSize=${session.textBuffer.length} ` +
-          `text="${event.delta?.substring(0, 20)}..."`,
+            `wsState=${session.elevenLabsWs?.readyState} ` +
+            `bufferSize=${session.textBuffer.length} ` +
+            `text="${event.delta?.substring(0, 20)}..."`,
         );
         if (
           !session.elevenLabsReady &&
@@ -5305,9 +5305,7 @@ These transitions should feel like something a real person would say. Vary them 
 
 AFTER GETTING NAME → Warm greeting, then ask what's going on. Let THEM tell you why they're calling. Pick up whatever details they mention naturally. Only ask for details they DIDN'T already mention.
 
-AFTER THEY DESCRIBE THE PROBLEM → React naturally to what they said. Show you understand. Then lead into collecting remaining details.
-
-AFTER GETTING PHONE NUMBER → Brief acknowledgment, then ask for address naturally. Brief acknowledgment, then ask about urgency.
+AFTER THEY DESCRIBE THE PROBLEM → React naturally to what they said. Show you understand. Then lead into collecting remaining details. Brief acknowledgment, then ask for address naturally. Brief acknowledgment, then ask about urgency.
 
 AFTER GETTING URGENCY (low/medium severity only) → Respond based on what they said — acknowledge if it's pressing, stay relaxed if they're relaxed. HIGH SEVERITY: this step does not happen — urgency is already known.
 
@@ -5589,7 +5587,9 @@ If save_customer_booking has NOT been called before any attempt to close or end 
       session.ws.close();
 
       if (session.enfonicaCallId) {
-        this.logger.log(`[${sessionId}] Emitting call.ended for enfonicaCallId: ${session.enfonicaCallId}`);
+        this.logger.log(
+          `[${sessionId}] Emitting call.ended for enfonicaCallId: ${session.enfonicaCallId}`,
+        );
         this.callEventEmitter.emit('call.ended', {
           enfonicaCallId: session.enfonicaCallId,
           customerNumber: session.customerNumber || '',
