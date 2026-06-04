@@ -318,6 +318,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     this.cleanupAiSession(callId);
     this.sessions.delete(callId);
     this.cleanupInProgress.delete(callId);
+    this.voiceService.closeSession(callId); // ADDED This here to end the session
   }
 
   private handleInboundRtpFrame(callId: string, ulawPayload: Buffer) {
