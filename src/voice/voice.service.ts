@@ -5427,7 +5427,7 @@ STEP 3 — PHONE NUMBER CONFIRMATION
 The caller's phone number is: ${caller_phone_number}
 
 Do NOT ask them for their number. Confirm it naturally:
-"Just to confirm, we've got ${caller_phone_number} on file for you — that still the best number?"
+"Just to confirm, we've got the number you're calling from — is that still the best one to reach you on?"
 
 IF THEY CONFIRM (yes / yeah / correct / any natural approval):
 → Save ${caller_phone_number} as the phone field. Move on.
