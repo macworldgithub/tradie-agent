@@ -4066,7 +4066,7 @@ export class VoiceService {
     private readonly callsService: CallsService,
     private readonly ariRtpMediaService: AriRtpMediaService,
     private readonly callEventEmitter: CallEventEmitter,
-  ) {}
+  ) { }
 
   async handleIncomingWebhook(
     payload: Record<string, unknown>,
@@ -4331,7 +4331,7 @@ export class VoiceService {
         if (event.type === 'audio-delta') {
           this.sendAudioToAri(callId, event.delta);
         }
-      });
+      }, callerNumber);
 
       const session = this.sessions.get(callId);
       if (session) {
@@ -4402,7 +4402,7 @@ export class VoiceService {
 
       this.logger.debug(
         `[${callId}] sendAudioToAri: queued ${frameCount} frames, ` +
-          `queueDepth=${session.outboundFrameQueue.length}`,
+        `queueDepth=${session.outboundFrameQueue.length}`,
       );
 
       // Kick the pacer if not running
@@ -4524,6 +4524,7 @@ export class VoiceService {
   async createRealtimeSession(
     sessionId: string,
     onEvent: (event: any) => void,
+    callerNumber?: string | null,
   ): Promise<void> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     const model =
@@ -4566,7 +4567,7 @@ export class VoiceService {
                 },
               },
             },
-            instructions: this.getSystemPrompt(),
+            instructions: this.getSystemPrompt(callerNumber),
             tools: [this.getSaveBookingTool()],
             tool_choice: 'auto',
           },
@@ -4760,9 +4761,9 @@ export class VoiceService {
           const msgContextId = msg.contextId || msg.context_id;
           this.logger.debug(
             `[${sessionId}] EL chunk received: contextId=${msgContextId} ` +
-              `currentCtx=${session.currentContextId} ` +
-              `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
-              `audioBytes=${Buffer.from(msg.audio, 'base64').length}`,
+            `currentCtx=${session.currentContextId} ` +
+            `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
+            `audioBytes=${Buffer.from(msg.audio, 'base64').length}`,
           );
           if (
             session.currentContextId &&
@@ -4788,9 +4789,9 @@ export class VoiceService {
               : 'N/A';
             this.logger.log(
               `[${sessionId}] Turn Latency Breakdown:\n` +
-                `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
-                `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
-                `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`,
+              `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
+              `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
+              `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`,
             );
           }
 
@@ -4809,7 +4810,7 @@ export class VoiceService {
             const responseCreatedAfterGreetingMs =
               session.firstResponseCreatedAtMs && session.greetingTriggeredAtMs
                 ? session.firstResponseCreatedAtMs -
-                  session.greetingTriggeredAtMs
+                session.greetingTriggeredAtMs
                 : -1;
             const firstAudioAfterResponseCreatedMs =
               session.firstResponseCreatedAtMs
@@ -4817,13 +4818,13 @@ export class VoiceService {
                 : -1;
             this.logger.log(
               `[${sessionId}] Timing: first audio delta at ${firstAudioAtMs - session.sessionStartedAtMs}ms ` +
-                `(openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, ` +
-                `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
+              `(openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, ` +
+              `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
             );
           }
           session.onEvent({ type: 'audio-delta', delta: msg.audio });
         }
-      } catch (err) {}
+      } catch (err) { }
     });
 
     elWs.on('error', (err) => {
@@ -4855,7 +4856,7 @@ export class VoiceService {
         const payload: any = { text: ' ' };
         if (s.currentContextId) payload.context_id = s.currentContextId;
         s.elevenLabsWs.send(JSON.stringify(payload));
-      } catch {}
+      } catch { }
     }, 10000);
 
     session.elevenLabsWs = elWs;
@@ -4919,9 +4920,9 @@ export class VoiceService {
     ) {
       this.logger.warn(
         `[${sessionId}] sendTextToElevenLabs DROPPED: ` +
-          `ready=${session?.elevenLabsReady} ` +
-          `wsState=${session?.elevenLabsWs?.readyState} ` +
-          `text="${text?.substring(0, 30)}"`,
+        `ready=${session?.elevenLabsReady} ` +
+        `wsState=${session?.elevenLabsWs?.readyState} ` +
+        `text="${text?.substring(0, 30)}"`,
       );
       return;
     }
@@ -4953,7 +4954,7 @@ export class VoiceService {
             flush: true,
           }),
         );
-      } catch {}
+      } catch { }
     }
   }
 
@@ -5023,7 +5024,7 @@ export class VoiceService {
                 close_context: true,
               }),
             );
-          } catch {}
+          } catch { }
         }
 
         session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -5049,9 +5050,9 @@ export class VoiceService {
       case 'response.text.delta':
         this.logger.debug(
           `[${sessionId}] Text delta: elevenLabsReady=${session.elevenLabsReady} ` +
-            `wsState=${session.elevenLabsWs?.readyState} ` +
-            `bufferSize=${session.textBuffer.length} ` +
-            `text="${event.delta?.substring(0, 20)}..."`,
+          `wsState=${session.elevenLabsWs?.readyState} ` +
+          `bufferSize=${session.textBuffer.length} ` +
+          `text="${event.delta?.substring(0, 20)}..."`,
         );
         if (
           !session.elevenLabsReady &&
@@ -5251,7 +5252,8 @@ export class VoiceService {
     }
   }
 
-  private getSystemPrompt(): string {
+  private getSystemPrompt(callerNumber?: string | null): string {
+    const caller_phone_number = callerNumber || 'unknown';
     return `
 =============================================================
 ABSOLUTE RULE — ENGLISH ONLY. THIS OVERRIDES EVERYTHING ELSE.
@@ -5420,20 +5422,44 @@ Greet them by name and ask what's going on. Let them tell you. This is where you
 Pick up whatever details they mention — problem, service type, urgency, address — and don't ask for things they already told you.
 
 ─────────────────────────────────────────────
-STEP 3 — ADDRESS
+STEP 3 — PHONE NUMBER CONFIRMATION
+─────────────────────────────────────────────
+The caller's phone number is: {caller_phone_number}
+
+Do NOT ask them for their number. Confirm it naturally:
+"We've also got {caller_phone_number} as your number — is that the best one to reach you on?"
+
+IF THEY CONFIRM (yes / yeah / correct / any natural approval):
+→ Save {caller_phone_number} as the phone field. Move on.
+
+IF THEY WANT TO GIVE A DIFFERENT NUMBER:
+→ "No worries, what's the best number for you?"
+→ Once they give it, read it back digit by digit:
+   - Each digit as a separate spoken English word
+   - Never group digits ("forty-one" → WRONG / "four one" → CORRECT)
+   - Example: 0412345678 → "zero, four, one, two, three, four, five, six, seven, eight — that right?"
+→ Wait for explicit confirmation before saving.
+→ If they correct a digit, read the full number back again and wait again.
+→ Do NOT move on until confirmed.
+
+─────────────────────────────────────────────
+STEP 4 — ADDRESS
 ─────────────────────────────────────────────
 Always collect. Ask where the job is (skip if they already mentioned it).
 
 ─────────────────────────────────────────────
-STEP 4 — URGENCY
+STEP 5 — URGENCY
 ─────────────────────────────────────────────
+
+IF RESCHEDULE WAS DETECTED: SKIP THIS ENTIRELY. Set urgency = "reschedule". Move on.
+
 IF SEVERITY IS HIGH: SKIP THIS QUESTION ENTIRELY.
 You already know it's urgent from what they described. Asking "how urgent is it?" to someone whose wall is falling down is tone-deaf. Set urgency = "urgent" in the booking and move on.
 
 IF SEVERITY IS LOW OR MEDIUM: Ask how urgent it is for them. Take their answer and use it.
 
 ─────────────────────────────────────────────
-STEP 5 — SERVICE TYPE
+STEP 6 — SERVICE TYPE
 ─────────────────────────────────────────────
 IF SEVERITY IS HIGH: SKIP THIS QUESTION ENTIRELY.
 Infer the service type from what they described and fill it in yourself. Do not ask the caller to diagnose their own emergency.
@@ -5444,7 +5470,7 @@ IF SERVICE TYPE WAS ALREADY MENTIONED BY THE CALLER: SKIP. Use what they said.
 IF SEVERITY IS LOW OR MEDIUM AND IT'S GENUINELY UNCLEAR: Do NOT ask what kind of work they need. Instead, ask ONE question about their specific situation using their exact words. Infer the service type yourself from their answer. If still unclear, use 'general home repair — to be assessed'
 
 ─────────────────────────────────────────────
-STEP 6 — PROBLEM FOLLOW-UP
+STEP 7 — PROBLEM FOLLOW-UP
 ─────────────────────────────────────────────
 IF SEVERITY IS HIGH: SKIP THIS ENTIRELY. You have enough. Don't make them explain more than they already have.
 
@@ -5453,7 +5479,7 @@ IF SEVERITY IS LOW OR MEDIUM AND CLARITY IS CLEAR: Skip unless one specific ques
 IF SEVERITY IS LOW OR MEDIUM AND CLARITY IS UNCLEAR: Ask ONE question rooted in their exact words. See PROBLEM CLARITY & SEVERITY SCORING for the full rules.
 
 ─────────────────────────────────────────────
-STEP 7 — PREFERRED TIME
+STEP 8 — PREFERRED TIME
 ─────────────────────────────────────────────
 IF SEVERITY IS HIGH: Reframe this. Don't say "when works best for you?" — that implies a scheduled visit, which isn't how emergencies work. Instead, say something like: "I'll get this through now and someone will be in touch as soon as possible." Then move to FINAL ACTION. Skip asking for a preferred time entirely and set preferred_time = "ASAP" in the booking.
 
@@ -5539,6 +5565,23 @@ RULES FOR BOTH:
 FAILURE SAFEGUARD
 ─────────────────────────────────────────────
 If save_customer_booking has NOT been called before any attempt to close or end the conversation, you MUST go back and complete STEP C before allowing the call to end. The booking CANNOT be closed without a successful database save.
+
+### RESCHEDULE DETECTION ###
+At ANY point in the conversation, if the caller mentions rescheduling, 
+moving, changing, or pushing back an existing booking:
+
+→ Set urgency = "reschedule" immediately.
+→ Skip STEP 5 (urgency) entirely for the rest of the call.
+→ Do NOT ask "how urgent is it?" — it makes no sense for a reschedule.
+→ React naturally: "Sure, no worries — let me grab your details and get that sorted."
+→ For preferred_time, ask: "What time works better for you?"
+
+Reschedule triggers (use judgement — not exhaustive):
+- "I need to reschedule"
+- "Can we move the booking?"
+- "Something came up, can we change the time?"
+- "Can we push it to another day?"
+- "I want to change my appointment"
 
 ### HARD RULES ###
 - Language: ENGLISH ONLY — see the absolute rule at the very top of this prompt.

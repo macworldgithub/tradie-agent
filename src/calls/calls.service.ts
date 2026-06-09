@@ -7,7 +7,7 @@ import { CallLog, CallLogDocument } from './schemas/call-log.schema';
 export class CallsService {
   constructor(
     @InjectModel(CallLog.name) private callLogModel: Model<CallLogDocument>,
-  ) {}
+  ) { }
 
   async create(log: Partial<CallLog>) {
     const created = new this.callLogModel(log);
