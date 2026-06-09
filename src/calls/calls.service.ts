@@ -48,4 +48,16 @@ export class CallsService {
   async findByEnfonicaCallId(enfonicaCallId: string): Promise<CallLog | null> {
     return this.callLogModel.findOne({ enfonicaCallId }).lean().exec();
   }
+
+  async findLatestByCaller(callerNumber: string): Promise<CallLog | null> {
+    const clean = callerNumber.replace(/\D/g, '');
+    if (!clean) return null;
+    const suffix = clean.slice(-9); // Match last 9 digits to handle prefixes or country codes
+    return this.callLogModel
+      .findOne({
+        callerNumber: { $regex: new RegExp(suffix + '$') },
+      })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
 }

@@ -38,6 +38,14 @@ export class EmailWorkerService {
         return;
       }
 
+      // Safeguard: Only send emails for calls where a booking was successfully completed (saved to DB)
+      if (callRecord.status !== 'completed' || !callRecord.summary) {
+        this.logger.log(
+          `Skipping post-call email for ${enfonicaCallId}: call status is '${callRecord.status}' (not completed)`,
+        );
+        return;
+      }
+
       if (!callRecord.tradieId) {
         this.logger.warn(`CallLog ${enfonicaCallId} does not have a tradieId`);
         return;

@@ -4325,6 +4325,21 @@ export class VoiceService {
 
     this.logger.log(`Voice Service handling call: ${callId}`);
 
+    let resolvedEnfonicaCallId = enfonicaCallId;
+    if (!resolvedEnfonicaCallId && callerNumber) {
+      try {
+        const matchingLog = await this.callsService.findLatestByCaller(callerNumber);
+        if (matchingLog) {
+          resolvedEnfonicaCallId = matchingLog.enfonicaCallId ?? null;
+          this.logger.log(
+            `[${callId}] Linked Asterisk call to Enfonica Call ID: ${resolvedEnfonicaCallId} via caller number: ${callerNumber}`,
+          );
+        }
+      } catch (err) {
+        this.logger.error(`Failed to lookup matching CallLog by caller number: ${err.message}`);
+      }
+    }
+
     try {
       await this.createRealtimeSession(callId, async (event) => {
         this.logger.log(`[${callId}] Voice event: ${event.type}`);
@@ -4335,7 +4350,7 @@ export class VoiceService {
 
       const session = this.sessions.get(callId);
       if (session) {
-        session.enfonicaCallId = enfonicaCallId;
+        session.enfonicaCallId = resolvedEnfonicaCallId;
         session.customerNumber = callerNumber;
         session.didNumber = calledNumber;
       }
