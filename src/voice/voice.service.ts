@@ -5629,18 +5629,26 @@ Reschedule triggers (use judgement — not exhaustive):
       this.closeElevenLabsWs(sessionId);
       session.ws.close();
 
-      if (session.enfonicaCallId) {
-        this.logger.log(
-          `[${sessionId}] Emitting call.ended for enfonicaCallId: ${session.enfonicaCallId}`,
-        );
-        this.callEventEmitter.emit('call.ended', {
-          enfonicaCallId: session.enfonicaCallId,
-          customerNumber: session.customerNumber || '',
-          didNumber: session.didNumber || '',
-          startTime: new Date(session.sessionStartedAtMs),
-          endTime: new Date(),
-        });
-      }
+      this.logger.log(`[${sessionId}] Emitting call.ended`);
+      this.callEventEmitter.emit('call.ended', {
+        enfonicaCallId: session.enfonicaCallId || sessionId,
+        customerNumber: session.customerNumber || '',
+        didNumber: session.didNumber || '',
+        startTime: new Date(session.sessionStartedAtMs),
+        endTime: new Date(),
+      });
+      // if (session.enfonicaCallId) {
+      //   this.logger.log(
+      //     `[${sessionId}] Emitting call.ended for enfonicaCallId: ${session.enfonicaCallId}`,
+      //   );
+      //   this.callEventEmitter.emit('call.ended', {
+      //     enfonicaCallId: session.enfonicaCallId,
+      //     customerNumber: session.customerNumber || '',
+      //     didNumber: session.didNumber || '',
+      //     startTime: new Date(session.sessionStartedAtMs),
+      //     endTime: new Date(),
+      //   });
+      // }
 
       this.sessions.delete(sessionId);
       this.logger.log(`[${sessionId}] Active Call Disconnected`);
