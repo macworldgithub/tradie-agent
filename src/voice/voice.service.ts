@@ -5664,7 +5664,6 @@ Reschedule triggers (use judgement — not exhaustive):
       //     endTime: new Date(),
       //   });
       // }
-
       this.sessions.delete(sessionId);
       this.logger.log(`[${sessionId}] Active Call Disconnected`);
     }

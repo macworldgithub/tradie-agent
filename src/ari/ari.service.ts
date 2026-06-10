@@ -61,6 +61,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
   private readonly sessions = new Map<string, AriCallSession>();
   private readonly aiSessions = new Map<string, AiSession>();
   private readonly cleanupInProgress = new Set<string>();
+  private readonly pendingExternalMediaChannels = new Map<string, () => void>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -182,8 +183,13 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
 
     if (channelId.startsWith('extmedia-')) {
       this.logger.debug(
-        `Ignoring StasisStart for externalMedia channel=${channelId}`,
+        `Received StasisStart for externalMedia channel=${channelId}, resolving pending waiter`,
       );
+      const resolve = this.pendingExternalMediaChannels.get(channelId);
+      if (resolve) {
+        resolve();
+        this.pendingExternalMediaChannels.delete(channelId);
+      }
       return;
     }
 
@@ -234,15 +240,22 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       this.logger.log(
         `[${callId}] Step 4: Creating WebSocket externalMedia channel`,
       );
-      const externalMediaChannelId =
-        await this.createWebSocketExternalMediaChannel(callId);
+      const externalMediaChannelId = `extmedia-${callId}`;
+      const readyPromise = this.waitForExternalMediaReady(externalMediaChannelId);
 
-      if (externalMediaChannelId) {
-        this.logger.log(
-          `[${callId}] Step 5: Adding externalMedia channel ${externalMediaChannelId} to bridge`,
+      await this.createWebSocketExternalMediaChannel(callId);
+
+      const ready = await readyPromise;
+      if (!ready) {
+        this.logger.warn(
+          `[${callId}] Proceeding with bridge add despite timeout`,
         );
-        await this.addChannelToBridge(bridgeId, externalMediaChannelId);
       }
+
+      this.logger.log(
+        `[${callId}] Step 5: Adding externalMedia channel ${externalMediaChannelId} to bridge`,
+      );
+      await this.addChannelToBridge(bridgeId, externalMediaChannelId);
 
       this.logger.log(`[${callId}] Step 6: Setting up session data`);
       this.sessions.set(callId, {
@@ -300,6 +313,11 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       return;
     }
     this.cleanupInProgress.add(callId);
+
+    const pendingResolver = this.pendingExternalMediaChannels.get(`extmedia-${callId}`);
+    if (pendingResolver) {
+      this.pendingExternalMediaChannels.delete(`extmedia-${callId}`);
+    }
 
     const session = this.sessions.get(callId);
     if (!session) {
@@ -708,6 +726,28 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       `Created WebSocket externalMedia channel for call=${callId} host=${rtpHost} channelId=${response?.id}`,
     );
     return response?.id;
+  }
+
+  private waitForExternalMediaReady(
+    channelId: string,
+    timeoutMs = 3000,
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        if (this.pendingExternalMediaChannels.has(channelId)) {
+          this.pendingExternalMediaChannels.delete(channelId);
+          this.logger.warn(
+            `Timeout waiting for externalMedia channel ${channelId} StasisStart`,
+          );
+          resolve(false);
+        }
+      }, timeoutMs);
+
+      this.pendingExternalMediaChannels.set(channelId, () => {
+        clearTimeout(timeout);
+        resolve(true);
+      });
+    });
   }
 
   private async createExternalMediaChannel(
