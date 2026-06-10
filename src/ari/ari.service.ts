@@ -603,8 +603,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
             );
           } else {
             // Use RTP for backward compatibility
-            this.ariRtpMediaService.sendSlin16ToCall(callId, ulawBuffer);
-            //this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
+            this.ariRtpMediaService.sendUlawToCall(callId, ulawBuffer);
             this.logger.log(
               `[${callId}] Sent audio via RTP: ${ulawBuffer.length} bytes`,
             );
