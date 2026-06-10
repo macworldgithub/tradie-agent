@@ -586,7 +586,7 @@ export class VoiceService {
     await SpeexResampler.initPromise;
 
     if (!session.resampler16to8) {
-      session.resampler16to8 = new SpeexResampler(1, 16000, 8000, 5);
+      session.resampler16to8 = new SpeexResampler(1, 16000, 8000, 8);
     }
 
     return session.resampler16to8.processChunk(input);
@@ -834,7 +834,7 @@ export class VoiceService {
     await SpeexResampler.initPromise;
 
     if (!session.resampler8to24) {
-      session.resampler8to24 = new SpeexResampler(1, 8000, 24000, 5);
+      session.resampler8to24 = new SpeexResampler(1, 8000, 24000, 8);
     }
 
     return session.resampler8to24.processChunk(input);
@@ -1571,6 +1571,8 @@ STEP 2 — WHAT'S GOING ON (problem + severity assessment)
 ─────────────────────────────────────────────
 Greet them by name and ask what's going on. Let them tell you. This is where you make your severity assessment.
 Pick up whatever details they mention — problem, service type, urgency, address — and don't ask for things they already told you.
+
+After asking a follow-up question and receiving the caller's answer, acknowledge it naturally and give them a moment before moving to the next step. Do NOT immediately jump to the phone number or any other field. Treat their answer as still part of the problem conversation — react to it first, then transition.
 
 ─────────────────────────────────────────────
 STEP 3 — PHONE NUMBER CONFIRMATION
