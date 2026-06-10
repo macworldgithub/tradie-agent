@@ -600,6 +600,21 @@ export class VoiceService {
     return ulaw;
   }
 
+  // private linearToUlaw(sample: number): number {
+  //   const BIAS = 0x84;
+  //   const CLIP = 32635;
+  //   let sign = 0;
+  //   if (sample < 0) {
+  //     sample = -sample;
+  //     sign = 0x80;
+  //   }
+  //   if (sample > CLIP) sample = CLIP;
+  //   sample += BIAS;
+  //   const exponent = Math.floor(Math.log2(sample)) - 6;
+  //   const mantissa = (sample >> (exponent + 1)) & 0x0f;
+  //   const ulawByte = ~(sign | (exponent << 4) | mantissa) & 0xff;
+  //   return ulawByte;
+  // }
   private linearToUlaw(sample: number): number {
     const BIAS = 0x84;
     const CLIP = 32635;
@@ -610,10 +625,10 @@ export class VoiceService {
     }
     if (sample > CLIP) sample = CLIP;
     sample += BIAS;
-    const exponent = Math.floor(Math.log2(sample)) - 6;
-    const mantissa = (sample >> (exponent + 1)) & 0x0f;
-    const ulawByte = ~(sign | (exponent << 4) | mantissa) & 0xff;
-    return ulawByte;
+    let exponent = 7;
+    for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) { }
+    const mantissa = (sample >> (exponent + 3)) & 0x0f;
+    return (~(sign | (exponent << 4) | mantissa)) & 0xff;
   }
 
   async createRealtimeSession(
@@ -778,16 +793,25 @@ export class VoiceService {
     return slinBuffer;
   }
 
+  // private ulawToLinear(ulaw: number): number {
+  //   const BIAS = 0x84;
+  //   ulaw = ~ulaw & 0xff;
+  //   const sign = ulaw & 0x80;
+  //   const exponent = (ulaw >> 4) & 0x07;
+  //   const mantissa = ulaw & 0x0f;
+  //   let sample = (mantissa << 3) + BIAS;
+  //   sample <<= exponent;
+  //   if (sign !== 0) sample = -sample;
+  //   return sample;
+  // }
   private ulawToLinear(ulaw: number): number {
-    const BIAS = 0x84;
     ulaw = ~ulaw & 0xff;
     const sign = ulaw & 0x80;
     const exponent = (ulaw >> 4) & 0x07;
     const mantissa = ulaw & 0x0f;
-    let sample = (mantissa << 3) + BIAS;
-    sample <<= exponent;
-    if (sign !== 0) sample = -sample;
-    return sample;
+    let sample = ((mantissa << 3) + 0x84) << exponent;
+    sample -= 0x84;  // ← the missing step
+    return sign !== 0 ? -sample : sample;
   }
 
   // private upsample8kTo24k(input: Buffer): Buffer {
