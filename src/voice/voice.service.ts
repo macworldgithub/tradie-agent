@@ -3981,6 +3981,7 @@ import { AriRtpMediaService } from '../ari/ari-rtp-media.service';
 import { VoiceMlBuilder } from './voiceml.builder';
 import { Customer, CustomerDocument } from './Schema/customer.schema';
 import { CallEventEmitter } from './call-event-emitter';
+import SpeexResampler from 'speex-resampler'; // ← added this to make voice better
 
 /**
  * RealtimeSession interface tracks the state of a single voice call.
@@ -4020,6 +4021,8 @@ interface RealtimeSession {
   // ───────────────────────────────────────────────────────────────────
   outboundFrameQueue: Buffer[];
   outboundPacerTimer: NodeJS.Timeout | null;
+  resampler16to8: SpeexResampler | null;   // ← added these to make voice better
+  resampler8to24: SpeexResampler | null;   // ← added these to make voice better
 }
 
 interface FunctionCallPayload {
@@ -4384,49 +4387,81 @@ export class VoiceService {
    * audio cadence so Asterisk never sees a burst.
    * ───────────────────────────────────────────────────────────────────
    */
-  private sendAudioToAri(callId: string, audioDelta: string): void {
+  // private sendAudioToAri(callId: string, audioDelta: string): void {
+  //   try {
+  //     const session = this.sessions.get(callId);
+  //     if (!session) {
+  //       this.logger.warn(
+  //         `[${callId}] sendAudioToAri: no session — dropping audio`,
+  //       );
+  //       return;
+  //     }
+
+  //     const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
+  //     this.logger.debug(
+  //       `[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`,
+  //     );
+
+  //     const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
+  //     const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
+  //     this.logger.debug(
+  //       `[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, queueing`,
+  //     );
+
+  //     // Split into 20ms frames and enqueue
+  //     let frameCount = 0;
+  //     for (let i = 0; i < ulawBuffer.length; i += ULAW_FRAME_BYTES) {
+  //       const frame = ulawBuffer.subarray(i, i + ULAW_FRAME_BYTES);
+  //       // Only queue full-size frames; trailing partial frame (rare) is also queued
+  //       // since Asterisk tolerates short final frames.
+  //       session.outboundFrameQueue.push(Buffer.from(frame));
+  //       frameCount++;
+  //     }
+
+  //     this.logger.debug(
+  //       `[${callId}] sendAudioToAri: queued ${frameCount} frames, ` +
+  //       `queueDepth=${session.outboundFrameQueue.length}`,
+  //     );
+
+  //     // Kick the pacer if not running
+  //     this.startOutboundPacer(callId);
+  //   } catch (err) {
+  //     this.logger.error(
+  //       `[${callId}] sendAudioToAri FAILED: ${(err as Error).message}`,
+  //       err,
+  //     );
+  //   }
+  // }
+
+  private async sendAudioToAri(callId: string, audioDelta: string): Promise<void> {
     try {
       const session = this.sessions.get(callId);
       if (!session) {
-        this.logger.warn(
-          `[${callId}] sendAudioToAri: no session — dropping audio`,
-        );
+        this.logger.warn(`[${callId}] sendAudioToAri: no session — dropping audio`);
         return;
       }
 
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
-      this.logger.debug(
-        `[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`,
-      );
+      this.logger.debug(`[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`);
 
-      const pcm8kBuffer = this.downsample16kTo8k(pcm16kBuffer);
+      const pcm8kBuffer = await this.downsample16kTo8k(callId, pcm16kBuffer);  // ← NOW ASYNC + sessionId
       const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
-      this.logger.debug(
-        `[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, queueing`,
-      );
+      this.logger.debug(`[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, queueing`);
 
-      // Split into 20ms frames and enqueue
       let frameCount = 0;
       for (let i = 0; i < ulawBuffer.length; i += ULAW_FRAME_BYTES) {
         const frame = ulawBuffer.subarray(i, i + ULAW_FRAME_BYTES);
-        // Only queue full-size frames; trailing partial frame (rare) is also queued
-        // since Asterisk tolerates short final frames.
         session.outboundFrameQueue.push(Buffer.from(frame));
         frameCount++;
       }
 
       this.logger.debug(
-        `[${callId}] sendAudioToAri: queued ${frameCount} frames, ` +
-        `queueDepth=${session.outboundFrameQueue.length}`,
+        `[${callId}] sendAudioToAri: queued ${frameCount} frames, queueDepth=${session.outboundFrameQueue.length}`,
       );
 
-      // Kick the pacer if not running
       this.startOutboundPacer(callId);
     } catch (err) {
-      this.logger.error(
-        `[${callId}] sendAudioToAri FAILED: ${(err as Error).message}`,
-        err,
-      );
+      this.logger.error(`[${callId}] sendAudioToAri FAILED: ${(err as Error).message}`, err);
     }
   }
 
@@ -4496,21 +4531,32 @@ export class VoiceService {
     }
   }
 
-  private downsample16kTo8k(input: Buffer): Buffer {
-    const inputSamples = input.length / 2;
-    const outputSamples = Math.floor(inputSamples / 2);
-    const output = Buffer.alloc(outputSamples * 2);
+  // private downsample16kTo8k(input: Buffer): Buffer {
+  //   const inputSamples = input.length / 2;
+  //   const outputSamples = Math.floor(inputSamples / 2);
+  //   const output = Buffer.alloc(outputSamples * 2);
 
-    for (let i = 0; i < outputSamples; i++) {
-      const s1 = input.readInt16LE(i * 4);
-      const s2 = input.readInt16LE(i * 4 + 2);
-      const avg = Math.round((s1 + s2) / 2);
-      const clamped = Math.max(-32768, Math.min(32767, avg));
-      output.writeInt16LE(clamped, i * 2);
+  //   for (let i = 0; i < outputSamples; i++) {
+  //     const s1 = input.readInt16LE(i * 4);
+  //     const s2 = input.readInt16LE(i * 4 + 2);
+  //     const avg = Math.round((s1 + s2) / 2);
+  //     const clamped = Math.max(-32768, Math.min(32767, avg));
+  //     output.writeInt16LE(clamped, i * 2);
+  //   }
+  //   return output;
+  // }
+  private async downsample16kTo8k(sessionId: string, input: Buffer): Promise<Buffer> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return Buffer.alloc(0);
+
+    await SpeexResampler.initPromise;
+
+    if (!session.resampler16to8) {
+      session.resampler16to8 = new SpeexResampler(1, 16000, 8000, 5);
     }
-    return output;
-  }
 
+    return session.resampler16to8.processChunk(input);
+  }
   private convertPcm16ToUlaw(pcmBuffer: Buffer): Buffer {
     const ulaw = Buffer.alloc(pcmBuffer.length / 2);
     for (let i = 0; i < ulaw.length; i++) {
@@ -4607,6 +4653,8 @@ export class VoiceService {
           // FIX: initialize pacer state
           outboundFrameQueue: [],
           outboundPacerTimer: null,
+          resampler16to8: null, // ← added this to make voice better
+          resampler8to24: null, // ← added this to make voice better
         });
 
         this.openElevenLabsStream(sessionId);
@@ -4648,14 +4696,34 @@ export class VoiceService {
     );
   }
 
-  sendInboundAudio(sessionId: string, ulawPayload: Buffer): void {
+  // sendInboundAudio(sessionId: string, ulawPayload: Buffer): void {
+  //   const session = this.sessions.get(sessionId);
+  //   if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
+  //     return;
+  //   }
+  //   try {
+  //     const pcm8k = this.convertUlawToSlin(ulawPayload);
+  //     const pcm24k = this.upsample8kTo24k(pcm8k);
+  //     session.ws.send(
+  //       JSON.stringify({
+  //         type: 'input_audio_buffer.append',
+  //         audio: pcm24k.toString('base64'),
+  //       }),
+  //     );
+  //   } catch (err) {
+  //     this.logger.error(
+  //       `[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`,
+  //     );
+  //   }
+  // }
+
+  async sendInboundAudio(sessionId: string, ulawPayload: Buffer): Promise<void> {
     const session = this.sessions.get(sessionId);
-    if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
-      return;
-    }
+    if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+
     try {
       const pcm8k = this.convertUlawToSlin(ulawPayload);
-      const pcm24k = this.upsample8kTo24k(pcm8k);
+      const pcm24k = await this.upsample8kTo24k(sessionId, pcm8k);  // ← NOW ASYNC + sessionId
       session.ws.send(
         JSON.stringify({
           type: 'input_audio_buffer.append',
@@ -4663,9 +4731,7 @@ export class VoiceService {
         }),
       );
     } catch (err) {
-      this.logger.error(
-        `[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`,
-      );
+      this.logger.error(`[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`);
     }
   }
 
@@ -4690,18 +4756,30 @@ export class VoiceService {
     return sample;
   }
 
-  private upsample8kTo24k(input: Buffer): Buffer {
-    const inputSamples = input.length / 2;
-    const outputSamples = inputSamples * 3;
-    const output = Buffer.alloc(outputSamples * 2);
-    for (let i = 0; i < inputSamples; i++) {
-      const sample = input.readInt16LE(i * 2);
-      const outIndex = i * 3;
-      output.writeInt16LE(sample, outIndex * 2);
-      output.writeInt16LE(sample, (outIndex + 1) * 2);
-      output.writeInt16LE(sample, (outIndex + 2) * 2);
+  // private upsample8kTo24k(input: Buffer): Buffer {
+  //   const inputSamples = input.length / 2;
+  //   const outputSamples = inputSamples * 3;
+  //   const output = Buffer.alloc(outputSamples * 2);
+  //   for (let i = 0; i < inputSamples; i++) {
+  //     const sample = input.readInt16LE(i * 2);
+  //     const outIndex = i * 3;
+  //     output.writeInt16LE(sample, outIndex * 2);
+  //     output.writeInt16LE(sample, (outIndex + 1) * 2);
+  //     output.writeInt16LE(sample, (outIndex + 2) * 2);
+  //   }
+  //   return output;
+  // }
+  private async upsample8kTo24k(sessionId: string, input: Buffer): Promise<Buffer> {
+    const session = this.sessions.get(sessionId);
+    if (!session) return Buffer.alloc(0);
+
+    await SpeexResampler.initPromise;
+
+    if (!session.resampler8to24) {
+      session.resampler8to24 = new SpeexResampler(1, 8000, 24000, 5);
     }
-    return output;
+
+    return session.resampler8to24.processChunk(input);
   }
 
   triggerGreeting(sessionId: string): void {
@@ -5664,6 +5742,8 @@ Reschedule triggers (use judgement — not exhaustive):
       //     endTime: new Date(),
       //   });
       // }
+      session.resampler16to8 = null; // added these to make voice better
+      session.resampler8to24 = null; // added these to make voice better
       this.sessions.delete(sessionId);
       this.logger.log(`[${sessionId}] Active Call Disconnected`);
     }
