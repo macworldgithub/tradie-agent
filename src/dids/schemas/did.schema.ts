@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import * as mongoose from 'mongoose';
 import { Document } from 'mongoose';
 
 export type DidDocument = Did & Document;
@@ -14,7 +15,7 @@ export class Did {
   @Prop({ required: true })
   companyId: string;
 
-  @Prop({ required: true })
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Tradie', required: true })
   assignedTradieId: string;
 }
 

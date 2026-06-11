@@ -784,7 +784,7 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
       endpoint,
       app: this.getAriApp(),
       callerId: callerNumber,
-      timeout: '25',
+      timeout: '15',
       appArgs: `${callerNumber},${didNumber},tradie`,
     });
   }

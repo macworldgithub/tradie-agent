@@ -189,7 +189,7 @@ export class VoiceService {
       callerId: callerID,
       tradieNumber: tradie.phoneNumber,
       nextUri,
-      timeoutSeconds: 33,
+      timeoutSeconds: 15,
     });
   }
 
@@ -273,7 +273,7 @@ export class VoiceService {
     const params: Record<string, string> = {
       endpoint,
       callerId,
-      timeout: '25',
+      timeout: '15',
       variables: JSON.stringify({ CALLER_ID: callerId, DID: did }),
     };
     if (app) params.app = app;

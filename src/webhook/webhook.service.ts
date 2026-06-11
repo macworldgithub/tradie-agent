@@ -14,7 +14,7 @@ export class WebhookService {
     private readonly didsService: DidsService,
     private readonly tradiesService: TradiesService,
     private readonly callsService: CallsService,
-  ) {}
+  ) { }
 
   async handleIncoming(
     payload: any,
@@ -125,7 +125,7 @@ export class WebhookService {
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Call
-    TimeoutSeconds="30"
+    TimeoutSeconds="15"
     CallerId="${didNumber}"
     NextUri="/webhook/call"
     Strategy="simultaneous"><Endpoint>${tradieNumber}</Endpoint></Call>
