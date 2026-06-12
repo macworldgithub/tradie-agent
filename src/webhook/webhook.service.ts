@@ -60,8 +60,62 @@ export class WebhookService {
       console.log('=== DID LOOKUP ===');
       console.log('DID found:', JSON.stringify(did));
 
+      if (did.assignedTradieIds && did.assignedTradieIds.length > 1) {
+        const tradies = await this.tradiesService.findByIds(did.assignedTradieIds);
+        const validTradieNumbers = tradies
+          .map((t) => t.phoneNumber)
+          .filter((num): num is string => !!num && num.startsWith('+'));
+
+        if (validTradieNumbers.length === 0) {
+          this.logger.error(`No valid tradie numbers in E164 format for multi-tradie DID: ${didNumber}`);
+          return {
+            type: 'voiceml',
+            body: `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, this service is temporarily unavailable.</Say></Response>`,
+          };
+        }
+
+        console.log('=== MULTI-TRADIE FETCHED ===');
+        console.log('validTradieNumbers:', validTradieNumbers);
+        console.log('tradieIds:', did.assignedTradieIds);
+
+        if (callerNumber && didNumber) {
+          await this.callsService.create({
+            enfonicaCallId,
+            callerNumber,
+            didNumber,
+            tradieIds: did.assignedTradieIds,
+            tradieNumber: validTradieNumbers.join(','),
+            status: 'initiated',
+            callStatus: 'INITIATED',
+            fallbackUsed: false,
+          });
+        }
+
+        console.log('=== CALLLOG CREATED FOR MULTI-TRADIE ===');
+        console.log('status: initiated');
+        console.log('=== VOICEML CALLERID ===', didNumber);
+
+        const endpointsXml = validTradieNumbers
+          .map((num) => `<Endpoint>${num}</Endpoint>`)
+          .join('');
+
+        const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Call
+    TimeoutSeconds="15"
+    CallerId="${didNumber}"
+    NextUri="/webhook/call"
+    Strategy="simultaneous">${endpointsXml}</Call>
+</Response>`;
+
+        console.log('=== DIALLING MULTI-TRADIE ===');
+        console.log('VoiceML sent to Enfonica, dialling:', validTradieNumbers);
+        console.log('=== VOICEML BEING SENT ===\n', voiceML);
+        return { type: 'voiceml', body: voiceML };
+      }
+
       const tradie = await this.tradiesService.findById(did.assignedTradieId);
-      const tradieNumber = did.tradieNumber || tradie?.phoneNumber;
+      const tradieNumber = tradie?.phoneNumber;
 
       if (!tradieNumber || !tradieNumber.startsWith('+')) {
         this.logger.error(`Tradie number is not E164 format: ${tradieNumber}`);

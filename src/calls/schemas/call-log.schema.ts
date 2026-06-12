@@ -20,6 +20,9 @@ export class CallLog {
   @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Tradie' })
   tradieId?: Types.ObjectId;
 
+  @Prop({ type: [String] })
+  tradieIds?: string[];
+
   @Prop({
     enum: ['initiated', 'no_answer', 'completed'],
     default: 'initiated',

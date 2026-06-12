@@ -24,7 +24,7 @@ export class EmailWorkerService {
     private readonly notificationService: NotificationService,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
-  ) {}
+  ) { }
 
   async processPostCallEmail(event: CallEndedEvent): Promise<void> {
     const { enfonicaCallId, customerNumber, didNumber, startTime, endTime } = event;
@@ -46,25 +46,55 @@ export class EmailWorkerService {
         return;
       }
 
-      if (!callRecord.tradieId) {
-        this.logger.warn(`CallLog ${enfonicaCallId} does not have a tradieId`);
-        return;
-      }
+      let tradieInfoSection = '';
+      let recipientEmail = '';
+      let ccEmails: string[] = [];
 
-      // 2. Fetch Tradie from DB
-      const tradie = await this.tradiesService.findById(String(callRecord.tradieId));
-      if (!tradie) {
-        this.logger.warn(`No Tradie found in DB with ID: ${callRecord.tradieId}`);
-        return;
-      }
+      if (callRecord.tradieIds && callRecord.tradieIds.length > 1) {
+        const tradies = await this.tradiesService.findByIds(callRecord.tradieIds);
+        if (tradies.length === 0) {
+          this.logger.warn(`No Tradies found in DB for IDs: ${callRecord.tradieIds.join(',')}`);
+          return;
+        }
 
-      const preference = tradie.notificationPreference;
-      const hasEmailPref = preference === 'email' || preference === 'both';
-      if (!tradie.email || !hasEmailPref) {
-        this.logger.log(
-          `Skipping email notification: email=${tradie.email}, preference=${preference}`,
+        const activeEmailTradies = tradies.filter(
+          (t) => t.email && (t.notificationPreference === 'email' || t.notificationPreference === 'both')
         );
-        return;
+
+        if (activeEmailTradies.length === 0) {
+          this.logger.log('Skipping email notification: no active tradies with email notification preference');
+          return;
+        }
+
+        recipientEmail = activeEmailTradies[0].email!;
+        ccEmails = activeEmailTradies.slice(1).map((t) => t.email!);
+
+        tradieInfoSection = tradies
+          .map((t) => `* name: ${t.name}, email: ${t.email || 'N/A'}`)
+          .join('\n');
+      } else {
+        if (!callRecord.tradieId) {
+          this.logger.warn(`CallLog ${enfonicaCallId} does not have a tradieId`);
+          return;
+        }
+
+        const tradie = await this.tradiesService.findById(String(callRecord.tradieId));
+        if (!tradie) {
+          this.logger.warn(`No Tradie found in DB with ID: ${callRecord.tradieId}`);
+          return;
+        }
+
+        const preference = tradie.notificationPreference;
+        const hasEmailPref = preference === 'email' || preference === 'both';
+        if (!tradie.email || !hasEmailPref) {
+          this.logger.log(
+            `Skipping email notification: email=${tradie.email}, preference=${preference}`,
+          );
+          return;
+        }
+
+        recipientEmail = tradie.email;
+        tradieInfoSection = `* email: ${tradie.email}`;
       }
 
       // 3. Fetch Customer/Lead document from DB
@@ -116,30 +146,28 @@ export class EmailWorkerService {
 
 === Customer Booking ===
 * name: ${customer.name}
-* phone (session.customerNumber): ${customerNumber}
+* phone : ${customerNumber}
 * address: ${customer.address}
 * urgency: ${customer.urgency}
-* service_type: ${customer.serviceType}
-* problem_description: ${customer.problemDescription}
-* preferred_time: ${customer.preferredTime}
+* Service Type: ${customer.serviceType}
+* Problem Description: ${customer.problemDescription}
+* preferred Time: ${customer.preferredTime}
 * summary: ${customer.summary || 'N/A'}
 
 === Call Metadata ===
-* didNumber: ${didNumber}
-* enfonicaCallId: ${enfonicaCallId}
-* tradieId: ${callRecord.tradieId}
+* didNumber: ${callRecord.didNumber || didNumber}
 * startTime: ${startTime.toISOString()}
 * endTime: ${endTime.toISOString()}
 * duration: ${durationSeconds} seconds
 
 === Tradie Info ===
-* email: ${tradie.email}
+${tradieInfoSection}
 `;
 
       // 6. Send the email via NotificationService
-      this.logger.log(`Sending post-call summary email to: ${tradie.email}`);
-      await this.notificationService.sendEmail(tradie.email, subject, body);
-      this.logger.log(`Successfully sent email to: ${tradie.email}`);
+      this.logger.log(`Sending post-call summary email to: ${recipientEmail}${ccEmails.length > 0 ? ` (CC: ${ccEmails.join(',')})` : ''}`);
+      await this.notificationService.sendEmail(recipientEmail, subject, body, ccEmails.length > 0 ? ccEmails : undefined);
+      this.logger.log(`Successfully sent email to: ${recipientEmail}`);
     } catch (err) {
       this.logger.error(`Failed to process post-call email for ${enfonicaCallId}:`, err);
     }

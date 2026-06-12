@@ -13,10 +13,11 @@ export class NotificationService {
     },
   });
 
-  async sendEmail(to: string, subject: string, body: string): Promise<void> {
+  async sendEmail(to: string, subject: string, body: string, cc?: string[]): Promise<void> {
     await this.transporter.sendMail({
       from: process.env.SMTP_USER,
       to,
+      cc,
       subject,
       text: body,
     });

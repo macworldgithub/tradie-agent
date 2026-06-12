@@ -12,8 +12,8 @@ export class CreateDidDto {
   @IsNotEmpty()
   assignedTradieId: string;
 
-  @ApiPropertyOptional({ example: '+61412345678' })
+  @ApiPropertyOptional({ example: ['6655f1a2b3c4d5e6f7a8b9c0'] })
   @IsOptional()
-  @IsString()
-  tradieNumber?: string;
+  @IsString({ each: true })
+  assignedTradieIds?: string[];
 }

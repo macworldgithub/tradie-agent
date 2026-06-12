@@ -18,6 +18,51 @@ export class DidsService {
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
   ) { }
 
+  private async validateTradieAssignments(
+    assignedTradieId?: string,
+    assignedTradieIds?: string[],
+    companyId?: string,
+  ): Promise<void> {
+    const idsToValidate: string[] = [];
+    if (assignedTradieId) {
+      idsToValidate.push(assignedTradieId);
+    }
+    if (assignedTradieIds && assignedTradieIds.length > 0) {
+      idsToValidate.push(...assignedTradieIds);
+    }
+
+    const uniqueIds = Array.from(new Set(idsToValidate));
+    if (uniqueIds.length === 0) {
+      return;
+    }
+
+    const tradies = await this.tradieModel
+      .find({ _id: { $in: uniqueIds } })
+      .lean()
+      .exec();
+
+    if (companyId) {
+      for (const id of uniqueIds) {
+        const t = tradies.find((tr) => String(tr._id) === id);
+        if (!t) {
+          throw new BadRequestException(`Tradie with ID ${id} not found.`);
+        }
+        if (t.companyId !== companyId) {
+          throw new BadRequestException(
+            'The tradie does not belong to this company.',
+          );
+        }
+      }
+    }
+
+    const hasUssd = tradies.some((t) => t.callMode === 'ussd');
+    if (hasUssd && uniqueIds.length > 1) {
+      throw new BadRequestException(
+        'USSD tradies require a dedicated DID and cannot share it with other tradies',
+      );
+    }
+  }
+
   async create(dto: CreateDidDto & { companyId: string }): Promise<Did> {
     const existing = await this.didModel
       .findOne({ companyId: dto.companyId })
@@ -29,15 +74,7 @@ export class DidsService {
       );
     }
 
-    const tradie = await this.tradieModel
-      .findById(dto.assignedTradieId)
-      .lean()
-      .exec();
-    if (!tradie || tradie.companyId !== dto.companyId) {
-      throw new BadRequestException(
-        'The tradie does not belong to this company.',
-      );
-    }
+    await this.validateTradieAssignments(dto.assignedTradieId, dto.assignedTradieIds, dto.companyId);
 
     const created = await new this.didModel(dto).save();
     await created.populate('assignedTradieId', 'name phoneNumber email');
@@ -56,7 +93,7 @@ export class DidsService {
     return dids.map((did) => ({
       ...did,
       isFullyMapped: Boolean(
-        did.didNumber && did.assignedTradieId && did.tradieNumber,
+        did.didNumber && (did.assignedTradieId || (did.assignedTradieIds && did.assignedTradieIds.length > 0)),
       ),
     })) as Did[];
   }
@@ -83,12 +120,22 @@ export class DidsService {
     return {
       ...did,
       isFullyMapped: Boolean(
-        did.didNumber && did.assignedTradieId && did.tradieNumber,
+        did.didNumber && (did.assignedTradieId || (did.assignedTradieIds && did.assignedTradieIds.length > 0)),
       ),
     } as Did;
   }
 
   async update(id: string, dto: UpdateDidDto): Promise<Did | null> {
+    const existing = await this.didModel.findById(id).lean().exec();
+    if (!existing) {
+      throw new NotFoundException('DID not found');
+    }
+
+    const assignedTradieId = dto.assignedTradieId !== undefined ? dto.assignedTradieId : existing.assignedTradieId;
+    const assignedTradieIds = dto.assignedTradieIds !== undefined ? dto.assignedTradieIds : existing.assignedTradieIds;
+
+    await this.validateTradieAssignments(assignedTradieId, assignedTradieIds, existing.companyId);
+
     return this.didModel
       .findByIdAndUpdate(id, dto, { new: true, runValidators: true })
       .populate('assignedTradieId', 'name phoneNumber email')
