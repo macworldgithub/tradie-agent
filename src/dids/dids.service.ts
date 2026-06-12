@@ -145,11 +145,7 @@ export class DidsService {
 
   async softDelete(id: string): Promise<Did | null> {
     return this.didModel
-      .findByIdAndUpdate(
-        id,
-        { isActive: false },
-        { new: true, runValidators: true },
-      )
+      .findByIdAndDelete(id)
       .populate('assignedTradieId', 'name phoneNumber email')
       .lean()
       .exec();
@@ -157,7 +153,7 @@ export class DidsService {
 
   async ensureActive(didNumber: string): Promise<boolean> {
     const d = await this.didModel
-      .findOne({ didNumber, isActive: true })
+      .findOne({ didNumber })
       .lean()
       .exec();
     return !!d;
