@@ -149,8 +149,11 @@ export class VoiceService {
       );
     }
 
-    const resolvedTradieId = didRecord.assignedTradieId || 
-      (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? didRecord.assignedTradieIds[0] : undefined);
+    const extractId = (val: any): string | undefined => 
+      val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
+
+    const resolvedTradieId = extractId(didRecord.assignedTradieId) || 
+      (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? extractId(didRecord.assignedTradieIds[0]) : undefined);
 
     if (!resolvedTradieId) {
       this.logger.warn(`No tradie assigned to DID: ${didRaw}`);

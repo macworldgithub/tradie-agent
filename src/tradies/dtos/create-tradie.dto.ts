@@ -17,9 +17,13 @@ export class CreateTradieDto {
   @IsString()
   email?: string;
 
-  @ApiPropertyOptional({ example: 'email', default: 'email' })
+  @ApiPropertyOptional({ 
+    example: 'both', 
+    enum: ['email', 'sms', 'both'], 
+    default: 'email' 
+  })
   @IsOptional()
-  @IsString()
+  @IsEnum(['email', 'sms', 'both'])
   notificationPreference?: string;
 
   @ApiPropertyOptional({

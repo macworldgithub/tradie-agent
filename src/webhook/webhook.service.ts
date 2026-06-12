@@ -60,8 +60,12 @@ export class WebhookService {
       console.log('=== DID LOOKUP ===');
       console.log('DID found:', JSON.stringify(did));
 
+      const extractId = (val: any): string | undefined => 
+        val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
+
       if (did.assignedTradieIds && did.assignedTradieIds.length > 1) {
-        const tradies = await this.tradiesService.findByIds(did.assignedTradieIds);
+        const rawIds = did.assignedTradieIds.map(extractId).filter((id): id is string => !!id);
+        const tradies = await this.tradiesService.findByIds(rawIds);
         const validTradieNumbers = tradies
           .map((t) => t.phoneNumber)
           .filter((num): num is string => !!num && num.startsWith('+'));
@@ -83,7 +87,7 @@ export class WebhookService {
             enfonicaCallId,
             callerNumber,
             didNumber,
-            tradieIds: did.assignedTradieIds,
+            tradieIds: rawIds,
             tradieNumber: validTradieNumbers.join(','),
             status: 'initiated',
             callStatus: 'INITIATED',
@@ -114,8 +118,8 @@ export class WebhookService {
         return { type: 'voiceml', body: voiceML };
       }
 
-      const resolvedTradieId = did.assignedTradieId || 
-        (did.assignedTradieIds && did.assignedTradieIds.length === 1 ? did.assignedTradieIds[0] : undefined);
+      const resolvedTradieId = extractId(did.assignedTradieId) || 
+        (did.assignedTradieIds && did.assignedTradieIds.length === 1 ? extractId(did.assignedTradieIds[0]) : undefined);
 
       if (!resolvedTradieId) {
         this.logger.error(`No tradie assigned to DID: ${didNumber}`);
