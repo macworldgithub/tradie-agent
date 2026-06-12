@@ -70,8 +70,8 @@ export class EmailWorkerService {
         ccEmails = activeEmailTradies.slice(1).map((t) => t.email!);
 
         tradieInfoSection = tradies
-          .map((t) => `* name: ${t.name}, email: ${t.email || 'N/A'}`)
-          .join('\n');
+          .map((t) => `* name: ${t.name}\n* email: ${t.email || 'N/A'}`)
+          .join('\n\n');
       } else {
         if (!callRecord.tradieId) {
           this.logger.warn(`CallLog ${enfonicaCallId} does not have a tradieId`);
@@ -94,7 +94,7 @@ export class EmailWorkerService {
         }
 
         recipientEmail = tradie.email;
-        tradieInfoSection = `* email: ${tradie.email}`;
+        tradieInfoSection = `* name: ${tradie.name}\n* email: ${tradie.email}`;
       }
 
       // 3. Fetch Customer/Lead document from DB
