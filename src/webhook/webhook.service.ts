@@ -30,14 +30,20 @@ export class WebhookService {
     const didNumber = callData.to;
     const callState = callData.state;
 
+    // --- IDEMPOTENCY GUARD ---
+    const existingCall = enfonicaCallId
+      ? await this.callsService.findByEnfonicaCallId(enfonicaCallId)
+      : null;
+
     console.log('=== WEBHOOK HIT ===');
     console.log('enfonicaCallId:', enfonicaCallId);
     console.log('customerNumber:', callerNumber);
     console.log('didNumber:', didNumber);
     console.log('callState:', callState);
+    console.log('existingCall found:', !!existingCall);
 
     // FIRST LEG — inbound call arriving
-    const isCallback = payload.parameters?.action === 'CALL';
+    const isCallback = payload.parameters?.action === 'CALL' || !!existingCall;
     if (!isCallback && (callState === 'STARTING' || !callState)) {
       if (!callerNumber || !didNumber) {
         this.logger.warn('Missing callerNumber or didNumber in payload');

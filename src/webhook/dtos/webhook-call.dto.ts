@@ -18,4 +18,7 @@ export class WebhookCallDto {
 
   @IsOptional()
   state?: string;
+
+  @IsOptional()
+  parameters?: any;
 }
