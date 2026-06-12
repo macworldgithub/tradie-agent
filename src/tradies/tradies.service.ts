@@ -14,15 +14,6 @@ export class TradiesService {
   ) {}
 
   async create(dto: CreateTradieDto & { companyId: string }): Promise<Tradie> {
-    const existing = await this.tradieModel
-      .findOne({ companyId: dto.companyId })
-      .lean()
-      .exec();
-    if (existing) {
-      throw new ConflictException(
-        'A tradie already exists for this company. One company can only have one tradie.',
-      );
-    }
     const created = new this.tradieModel(dto);
     return created.save();
   }

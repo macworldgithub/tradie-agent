@@ -7,10 +7,10 @@ export class CreateDidDto {
   @IsNotEmpty()
   didNumber: string;
 
-  @ApiProperty({ example: '6655f1a2b3c4d5e6f7a8b9c0' })
+  @ApiPropertyOptional({ example: '6655f1a2b3c4d5e6f7a8b9c0' })
   @IsString()
-  @IsNotEmpty()
-  assignedTradieId: string;
+  @IsOptional()
+  assignedTradieId?: string;
 
   @ApiPropertyOptional({ example: ['6655f1a2b3c4d5e6f7a8b9c0'] })
   @IsOptional()

@@ -15,8 +15,8 @@ export class Did {
   @Prop({ required: true })
   companyId: string;
 
-  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Tradie', required: true })
-  assignedTradieId: string;
+  @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Tradie' })
+  assignedTradieId?: string;
 }
 
 export const DidSchema = SchemaFactory.createForClass(Did);

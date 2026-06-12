@@ -114,7 +114,18 @@ export class WebhookService {
         return { type: 'voiceml', body: voiceML };
       }
 
-      const tradie = await this.tradiesService.findById(did.assignedTradieId);
+      const resolvedTradieId = did.assignedTradieId || 
+        (did.assignedTradieIds && did.assignedTradieIds.length === 1 ? did.assignedTradieIds[0] : undefined);
+
+      if (!resolvedTradieId) {
+        this.logger.error(`No tradie assigned to DID: ${didNumber}`);
+        return {
+          type: 'voiceml',
+          body: `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, this service is temporarily unavailable.</Say></Response>`,
+        };
+      }
+
+      const tradie = await this.tradiesService.findById(String(resolvedTradieId));
       const tradieNumber = tradie?.phoneNumber;
 
       if (!tradieNumber || !tradieNumber.startsWith('+')) {
@@ -127,10 +138,10 @@ export class WebhookService {
 
       console.log('=== TRADIE FETCHED ===');
       console.log('tradieNumber:', tradieNumber);
-      console.log('tradieId:', did.assignedTradieId);
+      console.log('tradieId:', resolvedTradieId);
 
-      const tradieId = Types.ObjectId.isValid(did.assignedTradieId)
-        ? new Types.ObjectId(did.assignedTradieId)
+      const tradieId = Types.ObjectId.isValid(String(resolvedTradieId))
+        ? new Types.ObjectId(String(resolvedTradieId))
         : undefined;
 
       if (callerNumber && didNumber) {

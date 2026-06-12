@@ -149,12 +149,20 @@ export class VoiceService {
       );
     }
 
-    const tradie = await this.tradiesService.findById(
-      didRecord.assignedTradieId,
-    );
+    const resolvedTradieId = didRecord.assignedTradieId || 
+      (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? didRecord.assignedTradieIds[0] : undefined);
+
+    if (!resolvedTradieId) {
+      this.logger.warn(`No tradie assigned to DID: ${didRaw}`);
+      return VoiceMlBuilder.say(
+        'We could not connect your call right now. Please try again later.',
+      );
+    }
+
+    const tradie = await this.tradiesService.findById(String(resolvedTradieId));
     if (!tradie) {
       this.logger.warn(
-        `Tradie lookup failed for did=${didRaw} tradieId=${didRecord.assignedTradieId}`,
+        `Tradie lookup failed for did=${didRaw} tradieId=${resolvedTradieId}`,
       );
       return VoiceMlBuilder.say(
         'We could not connect your call right now. Please try again later.',
