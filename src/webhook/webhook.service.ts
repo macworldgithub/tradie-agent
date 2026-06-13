@@ -100,6 +100,7 @@ export class WebhookService {
             callerNumber,
             didNumber,
             tradieId,
+            tradieIds: rawIds, // Ensures the array is ALWAYS populated
             tradieNumber,
             status: 'initiated',
             callStatus: 'INITIATED',
