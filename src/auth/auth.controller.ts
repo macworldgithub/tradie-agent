@@ -1,12 +1,13 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RegisterDto } from './dtos/register.dto';
 import { LoginDto } from './dtos/login.dto';
 import { ForgotPasswordEmailDto } from './dtos/forgot-password.dto';
 import { ChangePasswordDto } from './dtos/change-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { VerifyOtpDto } from './dtos/verify-otp.dto';
+import { ProfileResponseDto } from './dtos/profile-response.dto';
 
 @ApiTags('Auth')
 @Controller('api/auth')
@@ -48,5 +49,13 @@ export class AuthController {
       dto.newPassword,
     );
   }
+  @Get('profile')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get profile information for authenticated user' })
+  @ApiResponse({ status: 200, type: ProfileResponseDto })
+  getProfile(@Req() req) {
+    // We can use req.user.companyId which falls back to req.user.sub (userId)
+    return this.authService.getProfile(req.user.companyId);
+  }
 }
-// jabbbba 42
