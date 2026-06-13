@@ -68,15 +68,43 @@ export class DidsService {
       .findOne({ companyId: dto.companyId })
       .lean()
       .exec();
+
     if (existing) {
-      throw new ConflictException(
-        'A DID already exists for this company. One company can only have one DID.',
-      );
+      const existingAssignedIds = existing.assignedTradieIds || (existing.assignedTradieId ? [String(existing.assignedTradieId)] : []);
+      const newAssignedIds = [...existingAssignedIds];
+      
+      if (dto.assignedTradieId && !newAssignedIds.includes(dto.assignedTradieId)) {
+        newAssignedIds.push(dto.assignedTradieId);
+      }
+
+      await this.validateTradieAssignments(undefined, newAssignedIds, dto.companyId);
+
+      const updateQuery: any = {};
+      if (dto.assignedTradieId) {
+        updateQuery.$addToSet = { assignedTradieIds: dto.assignedTradieId };
+      }
+
+      const updated = await this.didModel
+        .findByIdAndUpdate(
+          existing._id,
+          Object.keys(updateQuery).length > 0 ? updateQuery : { $set: {} },
+          { new: true, runValidators: true }
+        )
+        .populate('assignedTradieId', 'name phoneNumber email')
+        .exec();
+
+      return updated as Did;
     }
 
-    await this.validateTradieAssignments(dto.assignedTradieId, dto.assignedTradieIds, dto.companyId);
+    const assignedIds = dto.assignedTradieId ? [dto.assignedTradieId] : [];
+    
+    await this.validateTradieAssignments(dto.assignedTradieId, assignedIds, dto.companyId);
 
-    const created = await new this.didModel(dto).save();
+    const created = await new this.didModel({
+      ...dto,
+      assignedTradieIds: assignedIds,
+    }).save();
+
     await created.populate('assignedTradieId', 'name phoneNumber email');
     return created;
   }
@@ -149,6 +177,34 @@ export class DidsService {
       .populate('assignedTradieId', 'name phoneNumber email')
       .lean()
       .exec();
+  }
+
+  async removeTradie(companyId: string, tradieId: string): Promise<Did | null> {
+    const existing = await this.didModel.findOne({ companyId }).lean().exec();
+    if (!existing) {
+      throw new NotFoundException('DID not found for this company');
+    }
+
+    const assignedTradieIds = existing.assignedTradieIds || [];
+    const newAssignedIds = assignedTradieIds.filter(id => String(id) !== String(tradieId));
+    
+    const updateQuery: any = {
+      $pull: { assignedTradieIds: tradieId }
+    };
+
+    if (existing.assignedTradieId && String(existing.assignedTradieId) === String(tradieId)) {
+      updateQuery.$set = {
+        assignedTradieId: newAssignedIds.length > 0 ? newAssignedIds[0] : null
+      };
+    }
+
+    const updated = await this.didModel
+      .findByIdAndUpdate(existing._id, updateQuery, { new: true, runValidators: true })
+      .populate('assignedTradieId', 'name phoneNumber email')
+      .lean()
+      .exec();
+
+    return updated as Did;
   }
 
   async ensureActive(didNumber: string): Promise<boolean> {

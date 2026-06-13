@@ -63,65 +63,9 @@ export class WebhookService {
       const extractId = (val: any): string | undefined => 
         val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
 
-      if (did.assignedTradieIds && did.assignedTradieIds.length > 1) {
-        const rawIds = did.assignedTradieIds.map(extractId).filter((id): id is string => !!id);
-        const tradies = await this.tradiesService.findByIds(rawIds);
-        const validTradieNumbers = tradies
-          .map((t) => t.phoneNumber)
-          .filter((num): num is string => !!num && num.startsWith('+'));
+      const rawIds = (did.assignedTradieIds || []).map(extractId).filter((id): id is string => !!id);
 
-        if (validTradieNumbers.length === 0) {
-          this.logger.error(`No valid tradie numbers in E164 format for multi-tradie DID: ${didNumber}`);
-          return {
-            type: 'voiceml',
-            body: `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, this service is temporarily unavailable.</Say></Response>`,
-          };
-        }
-
-        console.log('=== MULTI-TRADIE FETCHED ===');
-        console.log('validTradieNumbers:', validTradieNumbers);
-        console.log('tradieIds:', did.assignedTradieIds);
-
-        if (callerNumber && didNumber) {
-          await this.callsService.create({
-            enfonicaCallId,
-            callerNumber,
-            didNumber,
-            tradieIds: rawIds,
-            tradieNumber: validTradieNumbers.join(','),
-            status: 'initiated',
-            callStatus: 'INITIATED',
-            fallbackUsed: false,
-          });
-        }
-
-        console.log('=== CALLLOG CREATED FOR MULTI-TRADIE ===');
-        console.log('status: initiated');
-        console.log('=== VOICEML CALLERID ===', didNumber);
-
-        const endpointsXml = validTradieNumbers
-          .map((num) => `<Endpoint>${num}</Endpoint>`)
-          .join('');
-
-        const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-  <Call
-    TimeoutSeconds="15"
-    CallerId="${didNumber}"
-    NextUri="/webhook/call"
-    Strategy="simultaneous">${endpointsXml}</Call>
-</Response>`;
-
-        console.log('=== DIALLING MULTI-TRADIE ===');
-        console.log('VoiceML sent to Enfonica, dialling:', validTradieNumbers);
-        console.log('=== VOICEML BEING SENT ===\n', voiceML);
-        return { type: 'voiceml', body: voiceML };
-      }
-
-      const resolvedTradieId = extractId(did.assignedTradieId) || 
-        (did.assignedTradieIds && did.assignedTradieIds.length === 1 ? extractId(did.assignedTradieIds[0]) : undefined);
-
-      if (!resolvedTradieId) {
+      if (rawIds.length === 0) {
         this.logger.error(`No tradie assigned to DID: ${didNumber}`);
         return {
           type: 'voiceml',
@@ -129,75 +73,67 @@ export class WebhookService {
         };
       }
 
-      const tradie = await this.tradiesService.findById(String(resolvedTradieId));
-      const tradieNumber = tradie?.phoneNumber;
+      const tradies = await this.tradiesService.findByIds(rawIds);
+      const validTradies = tradies.filter((t) => t.phoneNumber && t.phoneNumber.startsWith('+'));
+      const validTradieNumbers = validTradies.map((t) => t.phoneNumber as string);
 
-      if (!tradieNumber || !tradieNumber.startsWith('+')) {
-        this.logger.error(`Tradie number is not E164 format: ${tradieNumber}`);
+      if (validTradieNumbers.length === 0) {
+        this.logger.error(`No valid tradie numbers in E164 format for DID: ${didNumber}`);
         return {
           type: 'voiceml',
           body: `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, this service is temporarily unavailable.</Say></Response>`,
         };
       }
 
-      console.log('=== TRADIE FETCHED ===');
-      console.log('tradieNumber:', tradieNumber);
-      console.log('tradieId:', resolvedTradieId);
+      if (rawIds.length === 1) {
+        const tradie = tradies[0];
+        const tradieNumber = validTradieNumbers[0];
+        const tradieId = Types.ObjectId.isValid(rawIds[0]) ? new Types.ObjectId(rawIds[0]) : undefined;
 
-      const tradieId = Types.ObjectId.isValid(String(resolvedTradieId))
-        ? new Types.ObjectId(String(resolvedTradieId))
-        : undefined;
+        console.log('=== TRADIE FETCHED ===');
+        console.log('tradieNumber:', tradieNumber);
+        console.log('tradieId:', rawIds[0]);
 
-      if (callerNumber && didNumber) {
-        await this.callsService.create({
-          enfonicaCallId,
-          callerNumber,
-          didNumber,
-          tradieId,
-          tradieNumber,
-          status: 'initiated',
-          callStatus: 'INITIATED',
-          fallbackUsed: false,
-        });
-      }
-
-      console.log('=== CALLLOG CREATED ===');
-      console.log('status: initiated');
-
-      // If tradie is configured for USSD, skip dialing and go straight to SIP fallback
-      if (tradie?.callMode === 'ussd') {
-        // mark call as in_progress
-        if (enfonicaCallId) {
-          await this.callsService.updateCallStatus(enfonicaCallId, 'initiated');
+        if (callerNumber && didNumber) {
+          await this.callsService.create({
+            enfonicaCallId,
+            callerNumber,
+            didNumber,
+            tradieId,
+            tradieNumber,
+            status: 'initiated',
+            callStatus: 'INITIATED',
+            fallbackUsed: false,
+          });
         }
 
-        const asteriskHost =
-          this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
-        const resolvedCallId2 = enfonicaCallId;
-        const encodedCallId = encodeURIComponent(resolvedCallId2);
-        const safeCallerId =
-          callerNumber && callerNumber.startsWith('+')
-            ? callerNumber
-            : didNumber;
+        console.log('=== CALLLOG CREATED ===');
+        console.log('status: initiated');
 
-        const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
+        // If tradie is configured for USSD, skip dialing and go straight to SIP fallback
+        if (tradie?.callMode === 'ussd') {
+          // mark call as in_progress
+          if (enfonicaCallId) {
+            await this.callsService.updateCallStatus(enfonicaCallId, 'initiated');
+          }
+
+          const asteriskHost = this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
+          const encodedCallId = encodeURIComponent(enfonicaCallId || '');
+          const safeCallerId = callerNumber && callerNumber.startsWith('+') ? callerNumber : didNumber;
+
+          const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Please hold, connecting you to our assistant.</Say>
   <Call CallerId="${safeCallerId}">
     <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
   </Call>
 </Response>`;
-        return { type: 'voiceml', body: voiceML };
-      }
+          return { type: 'voiceml', body: voiceML };
+        }
 
-      if (!tradieNumber) {
-        this.logger.warn(`No tradie number found for DID ${didNumber}`);
-        return { type: 'ack' };
-      }
+        console.log('=== VOICEML CALLERID ===', didNumber);
 
-      console.log('=== VOICEML CALLERID ===', didNumber);
-
-      const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
+        const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Call
     TimeoutSeconds="15"
@@ -206,8 +142,49 @@ export class WebhookService {
     Strategy="simultaneous"><Endpoint>${tradieNumber}</Endpoint></Call>
 </Response>`;
 
-      console.log('=== DIALLING TRADIE ===');
-      console.log('VoiceML sent to Enfonica, dialling:', tradieNumber);
+        console.log('=== DIALLING TRADIE ===');
+        console.log('VoiceML sent to Enfonica, dialling:', tradieNumber);
+        console.log('=== VOICEML BEING SENT ===\n', voiceML);
+        return { type: 'voiceml', body: voiceML };
+      }
+
+      // Multi-dial logic for length > 1
+      console.log('=== MULTI-TRADIE FETCHED ===');
+      console.log('validTradieNumbers:', validTradieNumbers);
+      console.log('tradieIds:', rawIds);
+
+      if (callerNumber && didNumber) {
+        await this.callsService.create({
+          enfonicaCallId,
+          callerNumber,
+          didNumber,
+          tradieIds: rawIds,
+          tradieNumber: validTradieNumbers.join(','),
+          status: 'initiated',
+          callStatus: 'INITIATED',
+          fallbackUsed: false,
+        });
+      }
+
+      console.log('=== CALLLOG CREATED FOR MULTI-TRADIE ===');
+      console.log('status: initiated');
+      console.log('=== VOICEML CALLERID ===', didNumber);
+
+      const endpointsXml = validTradieNumbers
+        .map((num) => `<Endpoint>${num}</Endpoint>`)
+        .join('');
+
+      const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Call
+    TimeoutSeconds="15"
+    CallerId="${didNumber}"
+    NextUri="/webhook/call"
+    Strategy="simultaneous">${endpointsXml}</Call>
+</Response>`;
+
+      console.log('=== DIALLING MULTI-TRADIE ===');
+      console.log('VoiceML sent to Enfonica, dialling:', validTradieNumbers);
       console.log('=== VOICEML BEING SENT ===\n', voiceML);
       return { type: 'voiceml', body: voiceML };
     }

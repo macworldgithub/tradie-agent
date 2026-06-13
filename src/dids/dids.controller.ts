@@ -63,6 +63,19 @@ export class DidsController {
     return did;
   }
 
+  @Delete('tradies/:tradieId')
+  async removeTradie(@Request() req, @Param('tradieId') tradieId: string) {
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      throw new BadRequestException('Company ID missing from token');
+    }
+    const did = await this.didsService.removeTradie(companyId, tradieId);
+    if (!did) {
+      throw new NotFoundException('DID not found');
+    }
+    return did;
+  }
+
   @Delete(':id')
   async softDelete(@Param('id') id: string) {
     const did = await this.didsService.softDelete(id);
