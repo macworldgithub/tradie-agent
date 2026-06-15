@@ -27,7 +27,7 @@ export class NotificationService {
     });
   }
 
-  async sendSms(to: string, body: string): Promise<void> {
+  async sendSms(to: string, body: string): Promise<any> {
     const username = this.configService.get<string>('MOBILEMESSAGE_USERNAME');
     const password = this.configService.get<string>('MOBILEMESSAGE_PASSWORD');
     const from = this.configService.get<string>('MOBILEMESSAGE_FROM');
@@ -59,9 +59,11 @@ export class NotificationService {
       } else {
         this.logger.log(`SMS sent successfully to ${to}`);
       }
+      return result;
     } catch (err: any) {
       // Log but don't throw — SMS failure should not break the notification flow
       this.logger.error(`SMS send error to ${to}: ${err.message}`);
+      return { success: false, error: err.message };
     }
   }
 }

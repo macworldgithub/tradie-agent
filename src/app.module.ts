@@ -9,6 +9,7 @@ import { DidsModule } from './dids/dids.module';
 import { TradiesModule } from './tradies/tradies.module';
 import { CallsModule } from './calls/calls.module';
 import { WebhookModule } from './webhook/webhook.module';
+import { SmsTestModule } from './sms-test/sms-test.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { WebhookModule } from './webhook/webhook.module';
     TradiesModule,
     CallsModule,
     WebhookModule,
+    SmsTestModule,
   ],
 })
 export class AppModule {}
