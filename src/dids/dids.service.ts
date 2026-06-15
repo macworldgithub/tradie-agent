@@ -10,12 +10,14 @@ import { Did, DidDocument } from './schemas/did.schema';
 import { CreateDidDto } from './dtos/create-did.dto';
 import { UpdateDidDto } from './dtos/update-did.dto';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
+import { TradiesService } from '../tradies/tradies.service';
 
 @Injectable()
 export class DidsService {
   constructor(
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
+    private tradiesService: TradiesService,
   ) { }
 
   private async validateTradieAssignments(
@@ -64,21 +66,39 @@ export class DidsService {
   }
 
   async create(dto: CreateDidDto & { companyId: string }): Promise<Did> {
+    await this.validateTradieAssignments(dto.assignedTradieId, dto.assignedTradieIds, dto.companyId);
+
     const existing = await this.didModel
       .findOne({ companyId: dto.companyId })
       .lean()
       .exec();
+
+    let didResult: Did;
+
     if (existing) {
-      throw new ConflictException(
-        'A DID already exists for this company. One company can only have one DID.',
-      );
+      // Append branch (DID already exists, $addToSet)
+      const updatePayload: any = {};
+      if (dto.assignedTradieId) {
+        updatePayload.$addToSet = { assignedTradieIds: dto.assignedTradieId };
+      }
+
+      didResult = await this.didModel
+        .findByIdAndUpdate(existing._id, updatePayload, { new: true })
+        .populate('assignedTradieId', 'name phoneNumber email')
+        .lean()
+        .exec() as Did;
+    } else {
+      // Create-new-DID branch
+      const created = await new this.didModel(dto).save();
+      await created.populate('assignedTradieId', 'name phoneNumber email');
+      didResult = created;
     }
 
-    await this.validateTradieAssignments(dto.assignedTradieId, dto.assignedTradieIds, dto.companyId);
+    if (dto.assignedTradieId) {
+      await this.tradiesService.updateIsMapped(dto.assignedTradieId, true);
+    }
 
-    const created = await new this.didModel(dto).save();
-    await created.populate('assignedTradieId', 'name phoneNumber email');
-    return created;
+    return didResult;
   }
 
   async findAll(companyId: string): Promise<Did[]> {
@@ -157,5 +177,18 @@ export class DidsService {
       .lean()
       .exec();
     return !!d;
+  }
+
+  async removeTradie(tradieId: string, companyId: string): Promise<void> {
+    await this.didModel.updateMany(
+      { companyId, assignedTradieIds: tradieId },
+      { $pull: { assignedTradieIds: tradieId } }
+    ).exec();
+
+    const stillExists = await this.didModel.findOne({ assignedTradieIds: tradieId }).lean().exec();
+
+    if (!stillExists) {
+      await this.tradiesService.updateIsMapped(tradieId, false);
+    }
   }
 }

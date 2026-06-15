@@ -4,6 +4,7 @@ import { DidsController } from './dids.controller';
 import { Did, DidSchema } from './schemas/did.schema';
 import { DidsService } from './dids.service';
 import { Tradie, TradieSchema } from '../tradies/schemas/tradie.schema';
+import { TradiesModule } from '../tradies/tradies.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { Tradie, TradieSchema } from '../tradies/schemas/tradie.schema';
       { name: Did.name, schema: DidSchema },
       { name: Tradie.name, schema: TradieSchema },
     ]),
+    TradiesModule,
   ],
   controllers: [DidsController],
   providers: [DidsService],

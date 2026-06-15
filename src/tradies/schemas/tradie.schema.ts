@@ -22,6 +22,9 @@ export class Tradie {
 
   @Prop({ type: String, enum: ['geo', 'ussd'], default: 'geo' })
   callMode: string;
+
+  @Prop({ default: false })
+  isMapped: boolean;
 }
 
 export const TradieSchema = SchemaFactory.createForClass(Tradie);

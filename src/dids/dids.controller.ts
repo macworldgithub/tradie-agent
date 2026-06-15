@@ -71,4 +71,10 @@ export class DidsController {
     }
     return did;
   }
+
+  @Delete('tradie/:tradieId')
+  async removeTradie(@Request() req, @Param('tradieId') tradieId: string) {
+    await this.didsService.removeTradie(tradieId, req.user?.companyId);
+    return { success: true };
+  }
 }

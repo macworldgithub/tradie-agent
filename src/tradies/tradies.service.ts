@@ -74,4 +74,8 @@ export class TradiesService {
   async softDelete(id: string): Promise<Tradie | null> {
     return this.tradieModel.findByIdAndDelete(id).lean().exec();
   }
+
+  async updateIsMapped(tradieId: string, value: boolean): Promise<void> {
+    await this.tradieModel.findByIdAndUpdate(tradieId, { isMapped: value }).exec();
+  }
 }
