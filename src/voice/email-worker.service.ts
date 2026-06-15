@@ -50,52 +50,36 @@ export class EmailWorkerService {
       let recipientEmail = '';
       let ccEmails: string[] = [];
 
-      if (callRecord.tradieIds && callRecord.tradieIds.length > 1) {
-        const tradies = await this.tradiesService.findByIds(callRecord.tradieIds);
-        if (tradies.length === 0) {
-          this.logger.warn(`No Tradies found in DB for IDs: ${callRecord.tradieIds.join(',')}`);
-          return;
-        }
+      const idsToUse = callRecord.tradieIds?.length 
+        ? callRecord.tradieIds 
+        : (callRecord.tradieId ? [String(callRecord.tradieId)] : []);
 
-        const activeEmailTradies = tradies.filter(
-          (t) => t.email && (t.notificationPreference === 'email' || t.notificationPreference === 'both')
-        );
-
-        if (activeEmailTradies.length === 0) {
-          this.logger.log('Skipping email notification: no active tradies with email notification preference');
-          return;
-        }
-
-        recipientEmail = activeEmailTradies[0].email!;
-        ccEmails = activeEmailTradies.slice(1).map((t) => t.email!);
-
-        tradieInfoSection = tradies
-          .map((t) => `* name: ${t.name}\n* email: ${t.email || 'N/A'}`)
-          .join('\n\n');
-      } else {
-        if (!callRecord.tradieId) {
-          this.logger.warn(`CallLog ${enfonicaCallId} does not have a tradieId`);
-          return;
-        }
-
-        const tradie = await this.tradiesService.findById(String(callRecord.tradieId));
-        if (!tradie) {
-          this.logger.warn(`No Tradie found in DB with ID: ${callRecord.tradieId}`);
-          return;
-        }
-
-        const preference = tradie.notificationPreference;
-        const hasEmailPref = preference === 'email' || preference === 'both';
-        if (!tradie.email || !hasEmailPref) {
-          this.logger.log(
-            `Skipping email notification: email=${tradie.email}, preference=${preference}`,
-          );
-          return;
-        }
-
-        recipientEmail = tradie.email;
-        tradieInfoSection = `* name: ${tradie.name}\n* email: ${tradie.email}`;
+      if (idsToUse.length === 0) {
+        this.logger.warn(`CallLog ${enfonicaCallId} does not have any tradieIds or tradieId`);
+        return;
       }
+
+      const tradies = await this.tradiesService.findByIds(idsToUse);
+      if (tradies.length === 0) {
+        this.logger.warn(`No Tradies found in DB for IDs: ${idsToUse.join(',')}`);
+        return;
+      }
+
+      const activeEmailTradies = tradies.filter(
+        (t) => t.email && (t.notificationPreference === 'email' || t.notificationPreference === 'both')
+      );
+
+      if (activeEmailTradies.length === 0) {
+        this.logger.log('Skipping email notification: no active tradies with email notification preference');
+        return;
+      }
+
+      recipientEmail = activeEmailTradies[0].email!;
+      ccEmails = activeEmailTradies.slice(1).map((t) => t.email!);
+
+      tradieInfoSection = tradies
+        .map((t) => `* name: ${t.name}\n* email: ${t.email || 'N/A'}`)
+        .join('\n\n');
 
       // 3. Fetch Customer/Lead document from DB
       let phoneToQuery = customerNumber;

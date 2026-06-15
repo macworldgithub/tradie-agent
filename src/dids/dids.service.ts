@@ -73,32 +73,44 @@ export class DidsService {
       .lean()
       .exec();
 
-    let didResult: Did;
-
     if (existing) {
-      // Append branch (DID already exists, $addToSet)
-      const updatePayload: any = {};
-      if (dto.assignedTradieId) {
-        updatePayload.$addToSet = { assignedTradieIds: dto.assignedTradieId };
+      const existingAssignedIds = existing.assignedTradieIds || (existing.assignedTradieId ? [String(existing.assignedTradieId)] : []);
+      const newAssignedIds = [...existingAssignedIds];
+
+      if (dto.assignedTradieId && !newAssignedIds.includes(dto.assignedTradieId)) {
+        newAssignedIds.push(dto.assignedTradieId);
       }
 
-      didResult = await this.didModel
-        .findByIdAndUpdate(existing._id, updatePayload, { new: true })
+      await this.validateTradieAssignments(undefined, newAssignedIds, dto.companyId);
+
+      const updateQuery: any = {};
+      if (dto.assignedTradieId) {
+        updateQuery.$addToSet = { assignedTradieIds: dto.assignedTradieId };
+      }
+
+      const updated = await this.didModel
+        .findByIdAndUpdate(
+          existing._id,
+          Object.keys(updateQuery).length > 0 ? updateQuery : { $set: {} },
+          { new: true, runValidators: true }
+        )
         .populate('assignedTradieId', 'name phoneNumber email')
-        .lean()
-        .exec() as Did;
-    } else {
-      // Create-new-DID branch
-      const created = await new this.didModel(dto).save();
-      await created.populate('assignedTradieId', 'name phoneNumber email');
-      didResult = created;
+        .exec();
+
+      return updated as Did;
     }
 
-    if (dto.assignedTradieId) {
-      await this.tradiesService.updateIsMapped(dto.assignedTradieId, true);
-    }
+    const assignedIds = dto.assignedTradieId ? [dto.assignedTradieId] : [];
 
-    return didResult;
+    await this.validateTradieAssignments(dto.assignedTradieId, assignedIds, dto.companyId);
+
+    const created = await new this.didModel({
+      ...dto,
+      assignedTradieIds: assignedIds,
+    }).save();
+
+    await created.populate('assignedTradieId', 'name phoneNumber email');
+    return created;
   }
 
   async findAll(companyId: string): Promise<Did[]> {
@@ -171,6 +183,34 @@ export class DidsService {
       .exec();
   }
 
+  async removeTradie(companyId: string, tradieId: string): Promise<Did | null> {
+    const existing = await this.didModel.findOne({ companyId }).lean().exec();
+    if (!existing) {
+      throw new NotFoundException('DID not found for this company');
+    }
+
+    const assignedTradieIds = existing.assignedTradieIds || [];
+    const newAssignedIds = assignedTradieIds.filter(id => String(id) !== String(tradieId));
+
+    const updateQuery: any = {
+      $pull: { assignedTradieIds: tradieId }
+    };
+
+    if (existing.assignedTradieId && String(existing.assignedTradieId) === String(tradieId)) {
+      updateQuery.$set = {
+        assignedTradieId: newAssignedIds.length > 0 ? newAssignedIds[0] : null
+      };
+    }
+
+    const updated = await this.didModel
+      .findByIdAndUpdate(existing._id, updateQuery, { new: true, runValidators: true })
+      .populate('assignedTradieId', 'name phoneNumber email')
+      .lean()
+      .exec();
+
+    return updated as Did;
+  }
+
   async ensureActive(didNumber: string): Promise<boolean> {
     const d = await this.didModel
       .findOne({ didNumber })
@@ -179,16 +219,16 @@ export class DidsService {
     return !!d;
   }
 
-  async removeTradie(tradieId: string, companyId: string): Promise<void> {
-    await this.didModel.updateMany(
-      { companyId, assignedTradieIds: tradieId },
-      { $pull: { assignedTradieIds: tradieId } }
-    ).exec();
+  // async removeTradie(tradieId: string, companyId: string): Promise<void> {
+  //   await this.didModel.updateMany(
+  //     { companyId, assignedTradieIds: tradieId },
+  //     { $pull: { assignedTradieIds: tradieId } }
+  //   ).exec();
 
-    const stillExists = await this.didModel.findOne({ assignedTradieIds: tradieId }).lean().exec();
+  //   const stillExists = await this.didModel.findOne({ assignedTradieIds: tradieId }).lean().exec();
 
-    if (!stillExists) {
-      await this.tradiesService.updateIsMapped(tradieId, false);
-    }
-  }
+  //   if (!stillExists) {
+  //     await this.tradiesService.updateIsMapped(tradieId, false);
+  //   }
+  // }
 }

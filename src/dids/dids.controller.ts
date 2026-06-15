@@ -20,7 +20,7 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 @ApiBearerAuth()
 @Controller('dids')
 export class DidsController {
-  constructor(private readonly didsService: DidsService) {}
+  constructor(private readonly didsService: DidsService) { }
 
   @Post()
   create(@Request() req, @Body() dto: CreateDidDto) {
@@ -63,6 +63,19 @@ export class DidsController {
     return did;
   }
 
+  @Delete('tradies/:tradieId')
+  async removeTradie(@Request() req, @Param('tradieId') tradieId: string) {
+    const companyId = req.user?.companyId;
+    if (!companyId) {
+      throw new BadRequestException('Company ID missing from token');
+    }
+    const did = await this.didsService.removeTradie(companyId, tradieId);
+    if (!did) {
+      throw new NotFoundException('DID not found');
+    }
+    return did;
+  }
+
   @Delete(':id')
   async softDelete(@Param('id') id: string) {
     const did = await this.didsService.softDelete(id);
@@ -72,9 +85,9 @@ export class DidsController {
     return did;
   }
 
-  @Delete('tradie/:tradieId')
-  async removeTradie(@Request() req, @Param('tradieId') tradieId: string) {
-    await this.didsService.removeTradie(tradieId, req.user?.companyId);
-    return { success: true };
-  }
+  // @Delete('tradie/:tradieId')
+  // async removeTradie(@Request() req, @Param('tradieId') tradieId: string) {
+  //   await this.didsService.removeTradie(tradieId, req.user?.companyId);
+  //   return { success: true };
+  // }
 }

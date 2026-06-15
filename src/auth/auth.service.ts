@@ -129,4 +129,16 @@ export class AuthService {
 
     return { message: 'Password changed successfully' };
   }
+
+  async getProfile(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+
+    return {
+      customerName: user.customerName,
+      companyName: user.companyName,
+      acn: user.acn,
+      email: user.email,
+    };
+  }
 }
