@@ -1,6 +1,7 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { CallEventEmitter } from './call-event-emitter';
 import { EmailWorkerService } from './email-worker.service';
+import { SmsWorkerService } from './sms-worker.service';
 
 @Injectable()
 export class CallEventsHandler implements OnModuleInit {
@@ -9,6 +10,7 @@ export class CallEventsHandler implements OnModuleInit {
   constructor(
     private readonly callEventEmitter: CallEventEmitter,
     private readonly emailWorkerService: EmailWorkerService,
+    private readonly smsWorkerService: SmsWorkerService,
   ) {}
 
   onModuleInit() {
@@ -21,6 +23,12 @@ export class CallEventsHandler implements OnModuleInit {
         this.emailWorkerService.processPostCallEmail(event).catch((err) => {
           this.logger.error(
             `Error processing post-call email for ${event.enfonicaCallId}:`,
+            err,
+          );
+        });
+        this.smsWorkerService.processPostCallSms(event).catch((err) => {
+          this.logger.error(
+            `Error processing post-call SMS for ${event.enfonicaCallId}:`,
             err,
           );
         });

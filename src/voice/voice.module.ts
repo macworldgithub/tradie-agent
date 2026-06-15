@@ -13,6 +13,7 @@ import { AriModule } from '../ari/ari.module';
 import { CallEventEmitter } from './call-event-emitter';
 import { CallEventsHandler } from './call-events.handler';
 import { EmailWorkerService } from './email-worker.service';
+import { SmsWorkerService } from './sms-worker.service';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { EmailWorkerService } from './email-worker.service';
     CallEventEmitter,
     CallEventsHandler,
     EmailWorkerService,
+    SmsWorkerService,
   ],
   exports: [VoiceService, CallEventEmitter],
 })
