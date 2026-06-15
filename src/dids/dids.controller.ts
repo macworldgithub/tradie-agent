@@ -63,7 +63,7 @@ export class DidsController {
     return did;
   }
 
-  @Delete('tradies/:tradieId')
+  @Delete('tradie/:tradieId')
   async removeTradie(@Request() req, @Param('tradieId') tradieId: string) {
     const companyId = req.user?.companyId;
     if (!companyId) {

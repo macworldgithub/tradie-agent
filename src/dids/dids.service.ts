@@ -97,6 +97,10 @@ export class DidsService {
         .populate('assignedTradieId', 'name phoneNumber email')
         .exec();
 
+      if (dto.assignedTradieId) {
+        await this.tradiesService.updateIsMapped(dto.assignedTradieId, true);
+      }
+
       return updated as Did;
     }
 
@@ -110,6 +114,11 @@ export class DidsService {
     }).save();
 
     await created.populate('assignedTradieId', 'name phoneNumber email');
+
+    if (dto.assignedTradieId) {
+      await this.tradiesService.updateIsMapped(dto.assignedTradieId, true);
+    }
+
     return created;
   }
 
@@ -207,6 +216,14 @@ export class DidsService {
       .populate('assignedTradieId', 'name phoneNumber email')
       .lean()
       .exec();
+
+    const stillExists = await this.didModel.findOne({ 
+      assignedTradieIds: tradieId 
+    }).lean().exec();
+
+    if (!stillExists) {
+      await this.tradiesService.updateIsMapped(tradieId, false);
+    }
 
     return updated as Did;
   }
