@@ -60,7 +60,7 @@ export class WebhookService {
       console.log('=== DID LOOKUP ===');
       console.log('DID found:', JSON.stringify(did));
 
-      const extractId = (val: any): string | undefined => 
+      const extractId = (val: any): string | undefined =>
         val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
 
       const rawIds = (did.assignedTradieIds || []).map(extractId).filter((id): id is string => !!id);
@@ -137,7 +137,7 @@ export class WebhookService {
         const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Call
-    TimeoutSeconds="15"
+    TimeoutSeconds="5"
     CallerId="${didNumber}"
     NextUri="/webhook/call"
     Strategy="simultaneous"><Endpoint>${tradieNumber}</Endpoint></Call>
@@ -178,7 +178,7 @@ export class WebhookService {
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Call
-    TimeoutSeconds="15"
+    TimeoutSeconds="5"
     CallerId="${didNumber}"
     NextUri="/webhook/call"
     Strategy="simultaneous">${endpointsXml}</Call>
