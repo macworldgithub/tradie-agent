@@ -106,6 +106,19 @@ export class SmsWorkerService {
       const durationMs = endTime.getTime() - startTime.getTime();
       const durationSeconds = Math.round(durationMs / 1000);
 
+      const dateFormatOptions: Intl.DateTimeFormatOptions = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        timeZoneName: 'short',
+      };
+      const formattedStartTime = startTime.toLocaleString('en-AU', dateFormatOptions);
+      const formattedEndTime = endTime.toLocaleString('en-AU', dateFormatOptions);
+
       // 5. Construct SMS details
       const body = `Post-Call SMS Notification
 
@@ -121,8 +134,8 @@ export class SmsWorkerService {
 
 === Call Metadata ===
 * didNumber: ${callRecord.didNumber || didNumber}
-* startTime: ${startTime.toISOString()}
-* endTime: ${endTime.toISOString()}
+* startTime: ${formattedStartTime}
+* endTime: ${formattedEndTime}
 * duration: ${durationSeconds} seconds
 
 === Tradie Info ===
