@@ -108,18 +108,25 @@ export class DidsService {
 
     await this.validateTradieAssignments(dto.assignedTradieId, assignedIds, dto.companyId);
 
-    const created = await new this.didModel({
-      ...dto,
-      assignedTradieIds: assignedIds,
-    }).save();
+    try {
+      const created = await new this.didModel({
+        ...dto,
+        assignedTradieIds: assignedIds,
+      }).save();
 
-    await created.populate('assignedTradieId', 'name phoneNumber email');
+      await created.populate('assignedTradieId', 'name phoneNumber email');
 
-    if (dto.assignedTradieId) {
-      await this.tradiesService.updateIsMapped(dto.assignedTradieId, true);
+      if (dto.assignedTradieId) {
+        await this.tradiesService.updateIsMapped(dto.assignedTradieId, true);
+      }
+
+      return created;
+    } catch (error) {
+      if (error.code === 11000) {
+        throw new BadRequestException('This DID number is already registered to another account.');
+      }
+      throw error;
     }
-
-    return created;
   }
 
   async findAll(companyId: string): Promise<Did[]> {
