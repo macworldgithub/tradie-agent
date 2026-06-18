@@ -137,7 +137,7 @@ export class WebhookService {
         const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Call
-    TimeoutSeconds="5"
+    TimeoutSeconds="8"
     CallerId="${didNumber}"
     NextUri="/webhook/call"
     Strategy="simultaneous"><Endpoint ScreenAudioUri="tts:You have an incoming customer call. Press any key to accept.">${tradieNumber}</Endpoint></Call>
@@ -178,7 +178,7 @@ export class WebhookService {
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Call
-    TimeoutSeconds="5"
+    TimeoutSeconds="8"
     CallerId="${didNumber}"
     NextUri="/webhook/call"
     Strategy="simultaneous">${endpointsXml}</Call>
