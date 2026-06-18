@@ -140,7 +140,7 @@ export class WebhookService {
     TimeoutSeconds="8"
     CallerId="${didNumber}"
     NextUri="/webhook/call"
-    Strategy="simultaneous"><Endpoint ScreenAudioUri="tts:You have an incoming customer call. Press any key to accept.">${tradieNumber}</Endpoint></Call>
+    Strategy="simultaneous"><Endpoint ScreenAudioUri="tts:Customer call. Press any key to accept.">${tradieNumber}</Endpoint></Call>
 </Response>`;
 
         console.log('=== DIALLING TRADIE ===');
@@ -172,7 +172,7 @@ export class WebhookService {
       console.log('=== VOICEML CALLERID ===', didNumber);
 
       const endpointsXml = validTradieNumbers
-        .map((num) => `<Endpoint ScreenAudioUri="tts:You have an incoming customer call. Press any key to accept.">${num}</Endpoint>`)
+        .map((num) => `<Endpoint ScreenAudioUri="tts:Customer call. Press any key to accept.">${num}</Endpoint>`)
         .join('');
 
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>

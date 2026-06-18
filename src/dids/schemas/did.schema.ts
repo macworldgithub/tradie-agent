@@ -17,6 +17,9 @@ export class Did {
 
   @Prop({ type: mongoose.Schema.Types.ObjectId, ref: 'Tradie' })
   assignedTradieId?: string;
+
+  @Prop()
+  subscriptionStartDate?: Date;
 }
 
 export const DidSchema = SchemaFactory.createForClass(Did);

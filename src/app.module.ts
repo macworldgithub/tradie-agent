@@ -10,6 +10,9 @@ import { TradiesModule } from './tradies/tradies.module';
 import { CallsModule } from './calls/calls.module';
 import { WebhookModule } from './webhook/webhook.module';
 import { SmsTestModule } from './sms-test/sms-test.module';
+import { AdminModule } from './admin/admin.module';
+
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -35,6 +38,8 @@ import { SmsTestModule } from './sms-test/sms-test.module';
     CallsModule,
     WebhookModule,
     SmsTestModule,
+    AdminModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}

@@ -20,7 +20,27 @@ export class DidsService {
     private tradiesService: TradiesService,
   ) { }
 
-  private async validateTradieAssignments(
+  private daysSince(date?: Date): number {
+    if (!date) return 30;
+    const diff = new Date().getTime() - new Date(date).getTime();
+    return Math.floor(diff / (1000 * 3600 * 24));
+  }
+
+  async getStatus(companyId: string) {
+    const did = await this.didModel.findOne({ companyId }).lean().exec();
+    if (!did) {
+      return { didNumber: null, isActive: false, daysRemaining: 0, subscriptionStartDate: null };
+    }
+    const daysRemaining = did.subscriptionStartDate ? Math.max(0, 30 - this.daysSince(did.subscriptionStartDate)) : 0;
+    return {
+      didNumber: did.didNumber,
+      isActive: did.assignedTradieIds && did.assignedTradieIds.length > 0,
+      daysRemaining,
+      subscriptionStartDate: did.subscriptionStartDate || null,
+    };
+  }
+
+  public async validateTradieAssignments(
     assignedTradieId?: string,
     assignedTradieIds?: string[],
     companyId?: string,

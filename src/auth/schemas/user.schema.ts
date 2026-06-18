@@ -14,8 +14,8 @@ export class User {
   @Prop({ required: true })
   customerName: string;
 
-  @Prop({ required: true })
-  companyName: string;
+  @Prop()
+  companyName?: string;
 
   @Prop()
   acn: string;
@@ -46,6 +46,15 @@ export class User {
 
   @Prop()
   resetPasswordExpiry?: Date;
+
+  @Prop({ default: false })
+  hasPaid: boolean;
+
+  @Prop()
+  stripeCustomerId?: string;
+
+  @Prop()
+  lastPaymentDate?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

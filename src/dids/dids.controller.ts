@@ -16,13 +16,17 @@ import { CreateDidDto } from './dtos/create-did.dto';
 import { UpdateDidDto } from './dtos/update-did.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
-@UseGuards(JwtAuthGuard)
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+
+@UseGuards(JwtAuthGuard, RolesGuard)
 @ApiBearerAuth()
 @Controller('dids')
 export class DidsController {
   constructor(private readonly didsService: DidsService) { }
 
   @Post()
+  @Roles('admin')
   create(@Request() req, @Body() dto: CreateDidDto) {
     if (!dto.didNumber) {
       throw new BadRequestException('didNumber is required');
@@ -34,6 +38,11 @@ export class DidsController {
   @Get()
   findAll(@Request() req) {
     return this.didsService.findAll(req.user?.companyId);
+  }
+
+  @Get('status')
+  async getStatus(@Request() req) {
+    return this.didsService.getStatus(req.user?.companyId);
   }
 
   @Get('number/:didNumber')
@@ -64,6 +73,7 @@ export class DidsController {
   }
 
   @Delete('tradie/:tradieId')
+  @Roles('admin')
   async removeTradie(@Request() req, @Param('tradieId') tradieId: string) {
     const companyId = req.user?.companyId;
     if (!companyId) {
