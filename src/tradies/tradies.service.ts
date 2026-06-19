@@ -72,7 +72,31 @@ export class TradiesService {
   }
 
   async softDelete(id: string): Promise<Tradie | null> {
-    return this.tradieModel.findByIdAndDelete(id).lean().exec();
+    const deletedTradie = await this.tradieModel.findByIdAndDelete(id).lean().exec();
+    if (deletedTradie) {
+      // Remove from assignedTradieIds array
+      const affectedDids = await this.didModel.find({ 
+        $or: [
+          { assignedTradieIds: id },
+          // Try matching as ObjectId just in case Mongoose stored it that way historically
+          { assignedTradieIds: id.length === 24 ? new (require('mongoose').Types.ObjectId)(id) : id }
+        ]
+      }).exec();
+
+      for (const did of affectedDids) {
+        did.assignedTradieIds = (did.assignedTradieIds || []).filter(tid => String(tid) !== String(id));
+        await did.save();
+      }
+
+      // If it was the primary legacy assignedTradieId, re-assign or unset
+      const didsWithPrimary = await this.didModel.find({ assignedTradieId: id }).exec();
+      for (const did of didsWithPrimary) {
+        const remainingIds = (did.assignedTradieIds || []).filter(tid => String(tid) !== String(id));
+        did.assignedTradieId = remainingIds.length > 0 ? remainingIds[0] as any : null;
+        await did.save();
+      }
+    }
+    return deletedTradie;
   }
 
   async updateIsMapped(tradieId: string, value: boolean): Promise<void> {

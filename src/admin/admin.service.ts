@@ -8,6 +8,7 @@ import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
 import { TradiesService } from '../tradies/tradies.service';
 import { DidsService } from '../dids/dids.service';
 import { CreateTradieDto } from '../tradies/dtos/create-tradie.dto';
+import { CreateAdminDidDto } from './dtos/create-admin-did.dto';
 
 @Injectable()
 export class AdminService {
@@ -58,8 +59,22 @@ export class AdminService {
     const company = await this.userModel.findById(companyId).lean().exec();
     if (!company) throw new NotFoundException('Company not found');
 
-    const did = await this.didModel.findOne({ companyId }).lean().exec();
+    let did = await this.didModel.findOne({ companyId }).exec();
     const tradies = await this.tradieModel.find({ companyId }).lean().exec();
+
+    // Self-heal ghost IDs on read
+    if (did && did.assignedTradieIds && did.assignedTradieIds.length > 0) {
+      const existingIds = did.assignedTradieIds.map(String);
+      const validTradieIds = tradies.map(t => String(t._id)); // We already fetched the company's tradies above
+      
+      const cleanIds = existingIds.filter(id => validTradieIds.includes(id));
+      
+      if (cleanIds.length !== existingIds.length) {
+        // A ghost was found! Clean it up and save.
+        did.assignedTradieIds = cleanIds;
+        await did.save();
+      }
+    }
 
     let daysRemaining = 0;
     if (did?.subscriptionStartDate) {
@@ -68,59 +83,78 @@ export class AdminService {
 
     return {
       company,
-      did,
+      did: did ? did.toObject() : null,
       tradies,
       daysRemaining
     };
+  }
+
+  async deleteCompany(companyId: string) {
+    const company = await this.userModel.findById(companyId).exec();
+    if (!company) throw new NotFoundException('Company not found');
+
+    await this.tradieModel.deleteMany({ companyId }).exec();
+    await this.didModel.deleteMany({ companyId }).exec();
+    await this.userModel.findByIdAndDelete(companyId).exec();
+
+    return { success: true, message: 'Company and associated data deleted' };
   }
 
   async createTradie(companyId: string, dto: CreateTradieDto) {
     return this.tradiesService.create({ ...dto, companyId });
   }
 
-  async createDid(companyId: string, dto: { didNumber: string, tradieIds?: string[] }) {
-    const { didNumber, tradieIds = [] } = dto;
+  async createDid(companyId: string, dto: CreateAdminDidDto) {
+    const { didNumber, tradieId } = dto;
 
-    await this.didsService.validateTradieAssignments(undefined, tradieIds, companyId);
+    const existing = await this.didModel.findOne({ companyId }).exec();
 
-    const did = new this.didModel({
-      didNumber,
-      companyId,
-      assignedTradieIds: tradieIds,
-      subscriptionStartDate: new Date()
-    });
+    if (!existing) {
+      // No DID yet — validate then create fresh
+      await this.didsService.validateTradieAssignments(undefined, [tradieId], companyId);
 
-    try {
-      await did.save();
-    } catch (e) {
-      if (e.code === 11000) throw new BadRequestException('DID already exists');
-      throw e;
-    }
+      const did = new this.didModel({
+        didNumber,
+        companyId,
+        assignedTradieId: tradieId,
+        assignedTradieIds: [tradieId],
+        subscriptionStartDate: new Date(),
+      });
 
-    if (tradieIds.length > 0) {
-      for (const id of tradieIds) {
-        await this.tradiesService.updateIsMapped(id, true);
+      try {
+        await did.save();
+      } catch (e) {
+        if (e.code === 11000) throw new BadRequestException('DID number already in use.');
+        throw e;
       }
+
+      await this.tradiesService.updateIsMapped(tradieId, true);
+      return did;
     }
 
-    return did;
-  }
+    // DID already exists — self-heal by removing any ghost IDs, then append new tradieId
+    const existingIds = (existing.assignedTradieIds || []).map(String);
+    
+    // Find which of those IDs actually still exist in the DB
+    const validExistingTradies = await this.tradieModel.find({ _id: { $in: existingIds } }).select('_id').lean().exec();
+    const validExistingIds = validExistingTradies.map(t => String(t._id));
 
-  async mapTradieToDid(didId: string, tradieId: string) {
-    const did = await this.didModel.findById(didId).exec();
-    if (!did) throw new NotFoundException('DID not found');
+    const combined = validExistingIds.includes(tradieId)
+      ? validExistingIds
+      : [...validExistingIds, tradieId];
 
-    const newAssignedIds = [...(did.assignedTradieIds || [])];
-    if (!newAssignedIds.includes(tradieId)) {
-      newAssignedIds.push(tradieId);
-    }
-    await this.didsService.validateTradieAssignments(undefined, newAssignedIds, did.companyId);
+    await this.didsService.validateTradieAssignments(undefined, combined, companyId);
 
-    did.assignedTradieIds = newAssignedIds;
-    await did.save();
+    const updated = await this.didModel
+      .findByIdAndUpdate(
+        existing._id,
+        { $set: { assignedTradieIds: combined } },
+        { new: true, runValidators: true },
+      )
+      .exec();
+
     await this.tradiesService.updateIsMapped(tradieId, true);
-
-    return did;
+    return updated;
   }
 
   async unmapDid(didId: string) {

@@ -5,6 +5,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { CreateTradieDto } from '../tradies/dtos/create-tradie.dto';
+import { CreateAdminDidDto } from './dtos/create-admin-did.dto';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
@@ -23,19 +24,19 @@ export class AdminController {
     return this.adminService.getCompanyDetails(companyId);
   }
 
+  @Delete('companies/:companyId')
+  async deleteCompany(@Param('companyId') companyId: string) {
+    return this.adminService.deleteCompany(companyId);
+  }
+
   @Post('companies/:companyId/tradies')
   async createTradie(@Param('companyId') companyId: string, @Body() dto: CreateTradieDto) {
     return this.adminService.createTradie(companyId, dto);
   }
 
   @Post('companies/:companyId/dids')
-  async createDid(@Param('companyId') companyId: string, @Body() dto: { didNumber: string, tradieIds?: string[] }) {
+  async createDid(@Param('companyId') companyId: string, @Body() dto: CreateAdminDidDto) {
     return this.adminService.createDid(companyId, dto);
-  }
-
-  @Post('dids/:didId/tradies/:tradieId')
-  async mapTradieToDid(@Param('didId') didId: string, @Param('tradieId') tradieId: string) {
-    return this.adminService.mapTradieToDid(didId, tradieId);
   }
 
   @Delete('dids/:didId/unmap')
