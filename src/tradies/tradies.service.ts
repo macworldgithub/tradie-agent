@@ -74,17 +74,23 @@ export class TradiesService {
   async softDelete(id: string): Promise<Tradie | null> {
     const deletedTradie = await this.tradieModel.findByIdAndDelete(id).lean().exec();
     if (deletedTradie) {
-      // Remove from assignedTradieIds array
+      // Remove from assigned AND unassigned arrays
       const affectedDids = await this.didModel.find({ 
         $or: [
           { assignedTradieIds: id },
-          // Try matching as ObjectId just in case Mongoose stored it that way historically
-          { assignedTradieIds: id.length === 24 ? new (require('mongoose').Types.ObjectId)(id) : id }
+          { assignedTradieIds: id.length === 24 ? new (require('mongoose').Types.ObjectId)(id) : id },
+          { unassignedTradieIds: id },
+          { unassignedTradieIds: id.length === 24 ? new (require('mongoose').Types.ObjectId)(id) : id }
         ]
       }).exec();
 
       for (const did of affectedDids) {
-        did.assignedTradieIds = (did.assignedTradieIds || []).filter(tid => String(tid) !== String(id));
+        if (did.assignedTradieIds) {
+          did.assignedTradieIds = did.assignedTradieIds.filter(tid => String(tid) !== String(id));
+        }
+        if (did.unassignedTradieIds) {
+          did.unassignedTradieIds = did.unassignedTradieIds.filter(tid => String(tid) !== String(id));
+        }
         await did.save();
       }
 

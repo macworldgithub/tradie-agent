@@ -162,6 +162,9 @@ export class AdminService {
     if (!did) throw new NotFoundException('DID not found');
 
     const prevTradies = did.assignedTradieIds || [];
+    
+    // Store them in unassigned array for later restoration
+    did.unassignedTradieIds = [...prevTradies];
     did.assignedTradieIds = [];
     await did.save();
 
@@ -173,24 +176,26 @@ export class AdminService {
     return did;
   }
 
-  async remapDid(didId: string, tradieIds: string[]) {
+  async remapDid(didId: string) {
     const did = await this.didModel.findById(didId).exec();
     if (!did) throw new NotFoundException('DID not found');
 
-    await this.didsService.validateTradieAssignments(undefined, tradieIds, did.companyId);
+    // Fetch the previously unassigned tradies
+    const unassignedIds = did.unassignedTradieIds || [];
 
-    const prevTradies = did.assignedTradieIds || [];
-    did.assignedTradieIds = tradieIds;
+    // Self-heal: ensure none of them were deleted while the company was unmapped
+    const validTradies = await this.tradieModel.find({ _id: { $in: unassignedIds } }).select('_id').lean().exec();
+    const validIds = validTradies.map(t => String(t._id));
+
+    // Validate the remaining valid tradies (USSD checks, etc)
+    await this.didsService.validateTradieAssignments(undefined, validIds, did.companyId);
+
+    did.assignedTradieIds = validIds;
+    did.unassignedTradieIds = [];
     did.subscriptionStartDate = new Date();
     await did.save();
 
-    for (const id of prevTradies) {
-      if (!tradieIds.includes(String(id))) {
-        await this.tradiesService.updateIsMapped(String(id), false);
-      }
-    }
-
-    for (const id of tradieIds) {
+    for (const id of validIds) {
       await this.tradiesService.updateIsMapped(String(id), true);
     }
 

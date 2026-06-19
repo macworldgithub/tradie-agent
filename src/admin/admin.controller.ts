@@ -7,6 +7,8 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 import { CreateTradieDto } from '../tradies/dtos/create-tradie.dto';
 import { CreateAdminDidDto } from './dtos/create-admin-did.dto';
 
+import { RemapAdminDidDto } from './dtos/remap-admin-did.dto';
+
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 @ApiBearerAuth()
@@ -45,7 +47,7 @@ export class AdminController {
   }
 
   @Post('dids/:didId/remap')
-  async remapDid(@Param('didId') didId: string, @Body() dto: { tradieIds: string[] }) {
-    return this.adminService.remapDid(didId, dto.tradieIds);
+  async remapDid(@Param('didId') didId: string) {
+    return this.adminService.remapDid(didId);
   }
 }

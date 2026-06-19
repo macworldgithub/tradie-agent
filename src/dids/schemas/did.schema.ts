@@ -12,6 +12,9 @@ export class Did {
   @Prop({ type: [String] })
   assignedTradieIds?: string[];
 
+  @Prop({ type: [String] })
+  unassignedTradieIds?: string[];
+
   @Prop({ required: true })
   companyId: string;
 
