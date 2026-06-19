@@ -13,6 +13,7 @@ import { SmsTestModule } from './sms-test/sms-test.module';
 import { AdminModule } from './admin/admin.module';
 
 import { PaymentsModule } from './payments/payments.module';
+import { ContactFormModule } from './contact-form/contact-form.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PaymentsModule } from './payments/payments.module';
     SmsTestModule,
     AdminModule,
     PaymentsModule,
+    ContactFormModule,
   ],
 })
 export class AppModule {}
