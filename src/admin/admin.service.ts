@@ -129,6 +129,8 @@ export class AdminService {
       }
 
       await this.tradiesService.updateIsMapped(tradieId, true);
+      // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
+      await this.userModel.findByIdAndUpdate(companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();
       return did;
     }
 
@@ -154,6 +156,8 @@ export class AdminService {
       .exec();
 
     await this.tradiesService.updateIsMapped(tradieId, true);
+    // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
+    await this.userModel.findByIdAndUpdate(companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();
     return updated;
   }
 
@@ -199,7 +203,8 @@ export class AdminService {
       await this.tradiesService.updateIsMapped(String(id), true);
     }
 
-    await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: true }).exec();
+    // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
+    await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();
 
     return did;
   }
@@ -220,7 +225,8 @@ export class AdminService {
 
     await did.save();
 
-    await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: true }).exec();
+    // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
+    await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();
 
     return {
       success: true,
