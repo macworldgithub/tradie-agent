@@ -3,7 +3,7 @@ import { AdminService } from './admin.service';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { ApiBearerAuth } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { CreateTradieDto } from '../tradies/dtos/create-tradie.dto';
 import { CreateAdminDidDto } from './dtos/create-admin-did.dto';
 
@@ -49,5 +49,11 @@ export class AdminController {
   @Post('dids/:didId/remap')
   async remapDid(@Param('didId') didId: string) {
     return this.adminService.remapDid(didId);
+  }
+
+  @Post('dids/:didId/renew')
+  @ApiOperation({ summary: 'Extend company subscription by 30 days' })
+  async renewDid(@Param('didId') didId: string) {
+    return this.adminService.renewDid(didId);
   }
 }

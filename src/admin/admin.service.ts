@@ -203,4 +203,29 @@ export class AdminService {
 
     return did;
   }
+
+  async renewDid(didId: string) {
+    const did = await this.didModel.findById(didId).exec();
+    if (!did) throw new NotFoundException('DID not found');
+
+    const currentStart = did.subscriptionStartDate || new Date();
+
+    // Move subscriptionStartDate forward by 30 days
+    // This adds 30 days to daysRemaining without resetting unused days
+    did.subscriptionStartDate = new Date(new Date(currentStart).getTime() + (30 * 24 * 60 * 60 * 1000));
+
+    // Calculate new daysRemaining to return in response
+    const daysSince = Math.floor((Date.now() - did.subscriptionStartDate.getTime()) / (1000 * 60 * 60 * 24));
+    const daysRemaining = Math.max(0, 30 - daysSince);
+
+    await did.save();
+
+    await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: true }).exec();
+
+    return {
+      success: true,
+      newSubscriptionStartDate: did.subscriptionStartDate,
+      daysRemaining
+    };
+  }
 }
