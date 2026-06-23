@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ScheduleModule } from '@nestjs/schedule';
 import { VoiceModule } from './voice/voice.module';
 import { AuthModule } from './auth/auth.module';
 import { AriModule } from './ari/ari.module';
@@ -18,6 +19,7 @@ import { ContactFormModule } from './contact-form/contact-form.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

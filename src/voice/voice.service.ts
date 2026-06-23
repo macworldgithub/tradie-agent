@@ -1817,6 +1817,10 @@ Reschedule triggers (use judgement — not exhaustive):
       session.resampler8to24 = null; // added these to make voice better
       this.sessions.delete(sessionId);
       this.logger.log(`[${sessionId}] Active Call Disconnected`);
+
+      // Clean up the SessionService webhook session so it doesn't leak memory
+      const webhookCallSid = session.enfonicaCallId || sessionId;
+      this.sessionService.deleteSession(webhookCallSid);
     }
   }
 }
