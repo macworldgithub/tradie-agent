@@ -55,6 +55,9 @@ export class User {
 
   @Prop()
   lastPaymentDate?: Date;
+
+  @Prop({ enum: ['AU', 'NZ'] })
+  country?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

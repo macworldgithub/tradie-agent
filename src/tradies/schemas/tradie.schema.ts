@@ -25,6 +25,9 @@ export class Tradie {
 
   @Prop({ default: false })
   isMapped: boolean;
+
+  @Prop({ enum: ['AU', 'NZ'] })
+  country?: string;
 }
 
 export const TradieSchema = SchemaFactory.createForClass(Tradie);

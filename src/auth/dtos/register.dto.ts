@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  IsEnum,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
@@ -47,4 +48,19 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   openingHours?: string;
+
+  @ApiPropertyOptional({ example: 'AU', enum: ['AU', 'NZ'] })
+  @IsOptional()
+  @IsEnum(['AU', 'NZ'])
+  country?: string;
+
+  @ApiPropertyOptional({ example: 'both', enum: ['email', 'sms', 'both'] })
+  @IsOptional()
+  @IsEnum(['email', 'sms', 'both'])
+  notificationPreference?: string;
+
+  @ApiPropertyOptional({ example: 'geo', enum: ['geo', 'ussd'] })
+  @IsOptional()
+  @IsEnum(['geo', 'ussd'])
+  callMode?: string;
 }

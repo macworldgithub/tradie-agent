@@ -34,4 +34,9 @@ export class CreateTradieDto {
   @IsOptional()
   @IsEnum(['geo', 'ussd'])
   callMode?: string;
+
+  @ApiPropertyOptional({ example: 'AU', enum: ['AU', 'NZ'] })
+  @IsOptional()
+  @IsEnum(['AU', 'NZ'])
+  country?: string;
 }

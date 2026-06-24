@@ -16,6 +16,7 @@ import { RegisterDto } from './dtos/register.dto';
 import { LoginDto } from './dtos/login.dto';
 import { MailService } from '../common/mail/mail.service';
 import { generateToken } from './utils/token.util';
+import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -23,6 +24,7 @@ export class AuthService implements OnModuleInit {
 
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
@@ -95,6 +97,18 @@ export class AuthService implements OnModuleInit {
     });
 
     await newUser.save();
+
+    const defaultTradie = new this.tradieModel({
+      name: dto.customerName,
+      phoneNumber: dto.mobileNumber,
+      email: dto.email,
+      companyId: newUser._id.toString(),
+      notificationPreference: dto.notificationPreference || 'email',
+      callMode: dto.callMode || 'geo',
+      country: dto.country,
+    });
+    await defaultTradie.save();
+
     await this.mailService.sendOtpEmail(dto.email, otp);
 
     return {
