@@ -49,18 +49,18 @@ export class RegisterDto {
   @IsString()
   openingHours?: string;
 
-  @ApiPropertyOptional({ example: 'AU', enum: ['AU', 'NZ'] })
-  @IsOptional()
+  @ApiProperty({ example: 'AU', enum: ['AU', 'NZ'] })
+  @IsNotEmpty()
   @IsEnum(['AU', 'NZ'])
-  country?: string;
+  country: string;
 
-  @ApiPropertyOptional({ example: 'both', enum: ['email', 'sms', 'both'] })
-  @IsOptional()
+  @ApiProperty({ example: 'both', enum: ['email', 'sms', 'both'] })
+  @IsNotEmpty()
   @IsEnum(['email', 'sms', 'both'])
-  notificationPreference?: string;
+  notificationPreference: string;
 
-  @ApiPropertyOptional({ example: 'geo', enum: ['geo', 'ussd'] })
-  @IsOptional()
+  @ApiProperty({ example: 'geo', enum: ['geo', 'ussd'] })
+  @IsNotEmpty()
   @IsEnum(['geo', 'ussd'])
-  callMode?: string;
+  callMode: string;
 }
