@@ -108,4 +108,12 @@ export class TradiesService {
   async updateIsMapped(tradieId: string, value: boolean): Promise<void> {
     await this.tradieModel.findByIdAndUpdate(tradieId, { isMapped: value }).exec();
   }
+
+  async updateManyIsMapped(tradieIds: string[], value: boolean): Promise<void> {
+    if (tradieIds.length === 0) return;
+    await this.tradieModel.updateMany(
+      { _id: { $in: tradieIds } },
+      { $set: { isMapped: value } }
+    ).exec();
+  }
 }

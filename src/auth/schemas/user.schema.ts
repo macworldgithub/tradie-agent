@@ -59,14 +59,15 @@ export class User {
   @Prop({ enum: ['AU', 'NZ'] })
   country?: string;
 
-  @Prop({ default: false })
-  didProvisioned: boolean;
 
   @Prop()
-  enfonicaNumber?: string;
+  phoneNumberInstanceName?: string;
 
   @Prop()
-  enfonicaInstanceName?: string;
+  phoneNumber?: string;
+
+  @Prop()
+  subscriptionExpiresAt?: Date;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

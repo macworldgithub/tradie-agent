@@ -172,9 +172,7 @@ export class AdminService {
     did.assignedTradieIds = [];
     await did.save();
 
-    for (const id of prevTradies) {
-      await this.tradiesService.updateIsMapped(String(id), false);
-    }
+    await this.tradiesService.updateManyIsMapped(prevTradies as string[], false);
 
     await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: false }).exec();
     return did;
@@ -199,9 +197,7 @@ export class AdminService {
     did.subscriptionStartDate = new Date();
     await did.save();
 
-    for (const id of validIds) {
-      await this.tradiesService.updateIsMapped(String(id), true);
-    }
+    await this.tradiesService.updateManyIsMapped(validIds, true);
 
     // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
     await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();

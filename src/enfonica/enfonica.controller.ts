@@ -7,7 +7,7 @@ export class EnfonicaController {
 
   @Post('provision/:companyId')
   async provisionNumber(@Param('companyId') companyId: string) {
-    const result = await this.enfonicaService.provisionNumber(companyId);
-    return { success: true, number: result };
+    await this.enfonicaService.provisionFirstTimeDid(companyId);
+    return { success: true };
   }
 }

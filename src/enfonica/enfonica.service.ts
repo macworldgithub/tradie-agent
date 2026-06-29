@@ -1,10 +1,13 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../auth/schemas/user.schema';
 import { Did, DidDocument } from '../dids/schemas/did.schema';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
+import { AdminService } from '../admin/admin.service';
 import { PhoneNumbersClient, PhoneNumberInstancesClient } from '@enfonica/numbering';
+
+const INCOMING_CALL_WEBHOOK = "https://tradie.omnisuiteai.com/webhook/call";
 
 @Injectable()
 export class EnfonicaService {
@@ -16,91 +19,100 @@ export class EnfonicaService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(Did.name) private readonly didModel: Model<DidDocument>,
     @InjectModel(Tradie.name) private readonly tradieModel: Model<TradieDocument>,
+    private readonly adminService: AdminService,
   ) {}
 
-  async provisionNumber(companyId: string): Promise<string> {
+
+
+  async provisionFirstTimeDid(userId: string) {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new Error(`User ${userId} not found`);
+
+    if (user.phoneNumberInstanceName) {
+      this.logger.warn(`User ${userId} already has a number provisioned. Skipping.`);
+      return;
+    }
+
+    const country = user.country || 'AU';
+    
+    // 2a. Search phone numbers
+    const [numbers] = await this.phoneNumbersClient.searchPhoneNumbers({
+      countryCode: country,
+      numberType: 'LOCAL',
+    });
+    
+    if (!numbers || numbers.length === 0) {
+      throw new Error(`No numbers available for country: ${country}`);
+    }
+
+    const selectedNumber = numbers[0];
+
+    // 2b. Purchase number
+    let instanceName: string;
+    let phoneNumberString: string;
+    
+    const parent = `projects/${process.env.ENFONICA_PROJECT_ID}`;
+    
     try {
-      const company = await this.userModel.findById(companyId);
-      if (!company) {
-        throw new Error(`Company with ID ${companyId} not found`);
-      }
-
-      if (company.didProvisioned === true) {
-        this.logger.log('Already provisioned, skipping');
-        return company.enfonicaNumber || '';
-      }
-
-      const country = company.country || 'AU';
-
-      const [numbers] = await this.phoneNumbersClient.searchPhoneNumbers({
-        countryCode: country,
-        numberType: 'LOCAL',
-      });
-
-      if (!numbers || numbers.length === 0) {
-        throw new Error(`No numbers available for country: ${country}`);
-      }
-
-      const selectedNumber = numbers[0];
-      const parent = `projects/${process.env.ENFONICA_PROJECT_ID}`;
-      
-      let instance: any;
-      try {
-        const response = await this.phoneNumberInstancesClient.createPhoneNumberInstance({
-          parent,
-          phoneNumberInstance: {
-            phoneNumber: selectedNumber,
-          }
-        } as any);
-        instance = response[0];
-      } catch (err) {
-        const response = await this.phoneNumberInstancesClient.createPhoneNumberInstance({
-          parent,
-          phoneNumber: selectedNumber,
-        } as any);
-        instance = response[0];
-      }
-
-      const instanceName = instance.name;
-      const purchasedNumberString = instance.phoneNumber?.phoneNumber || (selectedNumber as any).phoneNumber;
-
-      await this.phoneNumberInstancesClient.updatePhoneNumberInstance({
+      const response = await this.phoneNumberInstancesClient.createPhoneNumberInstance({
+        parent,
         phoneNumberInstance: {
-          name: instanceName,
-          incomingCallHandlerUris: ['https://tradie.omnisuiteai.com/webhook/call'],
-          labels: { company_id: companyId },
+          phoneNumber: { name: selectedNumber.name }
+        }
+      } as any);
+      
+      const instance = response[0];
+      if (!instance.name) {
+        throw new Error('Instance name is missing from Enfonica response');
+      }
+      instanceName = instance.name;
+      phoneNumberString = instance.phoneNumber?.phoneNumber || (selectedNumber as any).phoneNumber;
+
+      if (instance.lifecycleState !== 'ACTIVE') {
+        this.logger.warn(`Number lifecycleState is not ACTIVE: ${instance.lifecycleState}`);
+      }
+    } catch (err: any) {
+      this.logger.error(`Error purchasing Enfonica number for user ${userId}`, err.stack || err);
+      throw err;
+    }
+
+    // Wrap steps 2c to 7 in try/catch to log if setup fails after purchase
+    try {
+      // 2c. Immediately set incoming call webhook (mandatory)
+      await this.phoneNumberInstancesClient.updatePhoneNumberInstance({
+        name: instanceName,
+        phoneNumberInstance: {
+          incomingCallHandlerUris: [INCOMING_CALL_WEBHOOK],
         },
         updateMask: {
-          paths: ['incoming_call_handler_uris', 'labels'],
+          paths: ['incoming_call_handler_uris'],
         },
       } as any);
 
-      company.enfonicaNumber = purchasedNumberString;
-      company.enfonicaInstanceName = instanceName;
-      company.didProvisioned = true;
-      await company.save();
-
-      // Find first tradie and map to DID
-      const firstTradie = await this.tradieModel.findOne({ companyId });
-      let assignedTradieIds: string[] = [];
+      // 3 & 4. Assign DID to company and trigger tradie mapping
+      const firstTradie = await this.tradieModel.findOne({ companyId: userId });
       if (firstTradie) {
-        assignedTradieIds.push(firstTradie._id.toString());
-        firstTradie.isMapped = true;
-        await firstTradie.save();
+        await this.adminService.createDid(userId, {
+          didNumber: phoneNumberString,
+          tradieId: String(firstTradie._id),
+        });
+      } else {
+        this.logger.warn(`No tradie found for company ${userId}, DID was not mapped in AdminService`);
       }
 
-      const didRecord = new this.didModel({
-        didNumber: purchasedNumberString,
-        companyId,
-        assignedTradieIds,
-      });
-      await didRecord.save();
-
-
-      return purchasedNumberString;
+      // Save to user record
+      const now = new Date();
+      user.phoneNumberInstanceName = instanceName;
+      user.phoneNumber = phoneNumberString;
+      
+      const currentExpiry = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) : now;
+      const baseDate = currentExpiry > now ? currentExpiry : now;
+      user.subscriptionExpiresAt = new Date(baseDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+      
+      await user.save();
     } catch (error: any) {
-      this.logger.error(`Error provisioning number for company ${companyId}`, error.stack || error);
-      throw new InternalServerErrorException(`Failed to provision number: ${error.message}`);
+      this.logger.error(`FATAL: Enfonica number ${instanceName} was purchased but subsequent setup failed for user ${userId}`, error.stack || error);
+      throw error;
     }
   }
 }

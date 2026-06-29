@@ -5,12 +5,17 @@ import { PaymentsService } from './payments.service';
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { Did, DidSchema } from '../dids/schemas/did.schema';
 
+import { AdminModule } from '../admin/admin.module';
+import { EnfonicaModule } from '../enfonica/enfonica.module';
+
 @Module({
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
       { name: Did.name, schema: DidSchema }
-    ])
+    ]),
+    AdminModule,
+    EnfonicaModule,
   ],
   controllers: [PaymentsController],
   providers: [PaymentsService]

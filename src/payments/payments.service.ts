@@ -2,8 +2,11 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { User, UserDocument } from '../auth/schemas/user.schema';
 import { Did, DidDocument } from '../dids/schemas/did.schema';
+import { AdminService } from '../admin/admin.service';
+import { EnfonicaService } from '../enfonica/enfonica.service';
 import Stripe from 'stripe';
 
 @Injectable()
@@ -15,6 +18,8 @@ export class PaymentsService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
     private configService: ConfigService,
+    private adminService: AdminService,
+    private enfonicaService: EnfonicaService,
   ) {
     const stripeKey = this.configService.get<string>('STRIPE_SECRET_KEY');
     if (stripeKey) {
@@ -116,16 +121,88 @@ export class PaymentsService {
       const user = await this.userModel.findOne({ $or: conditions }).exec();
 
       if (user) {
-        user.hasPaid = true;
-        user.lastPaymentDate = new Date();
         if (customerId && !user.stripeCustomerId) {
           user.stripeCustomerId = customerId;
         }
-        await user.save();
-        this.logger.log(`Payment confirmed for user ${user.email}`);
+
+        if (user.phoneNumberInstanceName) {
+          // Returning user — number already exists, just extend/restore
+          this.logger.log(`Returning user payment for ${user.email} (companyId: ${user._id})`);
+          const did = await this.didModel.findOne({ companyId: String(user._id) }).exec();
+          
+          if (did) {
+            const wasUnmapped = did.unassignedTradieIds && did.unassignedTradieIds.length > 0;
+
+            if (wasUnmapped) {
+              // Service was stopped by scheduler — tradies are in unassignedTradieIds, restore them
+              this.logger.log(`Service was stopped. Remapping tradies for ${user.email}`);
+              await this.adminService.remapDid(String(did._id));
+            } else {
+              // User is still active (e.g. 2 days left) — tradies already mapped, just extend
+              this.logger.log(`Service still active. Skipping remap, just renewing for ${user.email}`);
+            }
+            
+            // Always extend the subscription by 30 days
+            await this.adminService.renewDid(String(did._id));
+          } else {
+            this.logger.warn(`Returning user has no DID record to remap/renew: ${user._id}`);
+          }
+          
+          user.hasPaid = true;
+          user.lastPaymentDate = new Date();
+          
+          // Stack 30 days onto remaining time: max(currentExpiry, now) + 30 days
+          const now = new Date();
+          const currentExpiry = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) : now;
+          const baseDate = currentExpiry > now ? currentExpiry : now;
+          user.subscriptionExpiresAt = new Date(baseDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+          
+          await user.save();
+        } else {
+          // First-time user: trigger full Enfonica purchase flow
+          this.logger.log(`First-time user payment. Triggering Enfonica flow for ${user.email}`);
+          user.hasPaid = true;
+          user.lastPaymentDate = new Date();
+          await user.save();
+          
+          // Step 2, 3, 4 will be encapsulated in this method in EnfonicaService
+          await this.enfonicaService.provisionFirstTimeDid(String(user._id));
+        }
       } else {
         this.logger.warn(`User not found for Stripe customer ${customerId} / email ${email}`);
       }
     }
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async handleSubscriptionAutoExpiry() {
+    this.logger.log('Running daily subscription auto-expiry check...');
+    const now = new Date();
+    
+    // Find users where subscriptionExpiresAt < now AND hasPaid = true
+    const expiredUsers = await this.userModel.find({
+      hasPaid: true,
+      subscriptionExpiresAt: { $lt: now }
+    }).exec();
+
+    for (const user of expiredUsers) {
+      try {
+        const did = await this.didModel.findOne({ companyId: String(user._id) }).exec();
+        if (did) {
+          // unmapDid handles unmapping all tradies in bulk and sets hasPaid = false
+          await this.adminService.unmapDid(String(did._id));
+        } else {
+          this.logger.warn(`Expired user ${user._id} has no DID record to unmap.`);
+          user.hasPaid = false;
+          await user.save();
+        }
+        
+        this.logger.log(`Subscription expired for user ${user._id} (${user.email}) (Enfonica number: ${user.phoneNumber || 'unknown'})`);
+      } catch (err: any) {
+        this.logger.error(`Failed to process expiry for user ${user._id}: ${err.message}`, err.stack);
+      }
+    }
+    
+    this.logger.log(`Completed auto-expiry check. Processed ${expiredUsers.length} users.`);
   }
 }
