@@ -1,8 +1,7 @@
-import { Controller, Get, Post, Request, UseGuards, Req, Res, RawBodyRequest, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Request, UseGuards, Req, Res, BadRequestException } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
-import type { Request as ExpressRequest, Response } from 'express';
 
 @Controller('payments')
 export class PaymentsController {
@@ -22,6 +21,17 @@ export class PaymentsController {
     return this.paymentsService.createCheckoutSession(req.user?.companyId);
   }
 
+  /**
+   * Manually sync payment status from Stripe API.
+   * Use this when webhooks can't reach your server (e.g. localhost testing).
+   */
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('sync')
+  async syncPayment(@Request() req) {
+    return this.paymentsService.syncPaymentStatus(req.user?.companyId);
+  }
+
   @Post('webhook')
   async handleWebhook(@Req() req: any, @Res() res: any) {
     const signature = req.headers['stripe-signature'] as string;
@@ -37,5 +47,42 @@ export class PaymentsController {
     } catch (err) {
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
+  }
+}
+
+@Controller()
+export class PaymentPagesController {
+  @Get('payment-success')
+  paymentSuccess(@Res() res: any) {
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Payment Successful</title></head>
+      <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f0fdf4;">
+        <div style="text-align: center; padding: 40px; background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.1);">
+          <div style="font-size: 64px;">✅</div>
+          <h1 style="color: #16a34a; margin: 16px 0 8px;">Payment Successful!</h1>
+          <p style="color: #666; font-size: 18px;">Your subscription is now active. You can close this page.</p>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  @Get('payment-cancel')
+  paymentCancel(@Res() res: any) {
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>Payment Cancelled</title></head>
+      <body style="font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #fef2f2;">
+        <div style="text-align: center; padding: 40px; background: white; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.1);">
+          <div style="font-size: 64px;">❌</div>
+          <h1 style="color: #dc2626; margin: 16px 0 8px;">Payment Cancelled</h1>
+          <p style="color: #666; font-size: 18px;">No charges were made. You can try again anytime.</p>
+        </div>
+      </body>
+      </html>
+    `);
   }
 }

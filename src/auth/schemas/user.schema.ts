@@ -54,6 +54,9 @@ export class User {
   stripeCustomerId?: string;
 
   @Prop()
+  stripeSubscriptionId?: string;
+
+  @Prop()
   lastPaymentDate?: Date;
 
   @Prop({ enum: ['AU', 'NZ'] })

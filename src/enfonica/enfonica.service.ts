@@ -20,7 +20,7 @@ export class EnfonicaService {
     @InjectModel(Did.name) private readonly didModel: Model<DidDocument>,
     @InjectModel(Tradie.name) private readonly tradieModel: Model<TradieDocument>,
     private readonly adminService: AdminService,
-  ) {}
+  ) { }
 
 
 
@@ -34,13 +34,13 @@ export class EnfonicaService {
     }
 
     const country = user.country || 'AU';
-    
+
     // 2a. Search phone numbers
     const [numbers] = await this.phoneNumbersClient.searchPhoneNumbers({
       countryCode: country,
       numberType: 'LOCAL',
     });
-    
+
     if (!numbers || numbers.length === 0) {
       throw new Error(`No numbers available for country: ${country}`);
     }
@@ -50,17 +50,18 @@ export class EnfonicaService {
     // 2b. Purchase number
     let instanceName: string;
     let phoneNumberString: string;
-    
+
     const parent = `projects/${process.env.ENFONICA_PROJECT_ID}`;
-    
+
     try {
       const response = await this.phoneNumberInstancesClient.createPhoneNumberInstance({
         parent,
         phoneNumberInstance: {
-          phoneNumber: { name: selectedNumber.name }
+          phoneNumber: { name: selectedNumber.name },
+          regulatoryListing: process.env.ENFONICA_REGULATORY_LISTING_ID
         }
       } as any);
-      
+
       const instance = response[0];
       if (!instance.name) {
         throw new Error('Instance name is missing from Enfonica response');
@@ -104,11 +105,11 @@ export class EnfonicaService {
       const now = new Date();
       user.phoneNumberInstanceName = instanceName;
       user.phoneNumber = phoneNumberString;
-      
+
       const currentExpiry = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) : now;
       const baseDate = currentExpiry > now ? currentExpiry : now;
       user.subscriptionExpiresAt = new Date(baseDate.getTime() + (30 * 24 * 60 * 60 * 1000));
-      
+
       await user.save();
     } catch (error: any) {
       this.logger.error(`FATAL: Enfonica number ${instanceName} was purchased but subsequent setup failed for user ${userId}`, error.stack || error);
