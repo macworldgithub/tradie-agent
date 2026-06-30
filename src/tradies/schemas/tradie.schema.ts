@@ -20,8 +20,8 @@ export class Tradie {
   @Prop({ enum: ['email', 'sms', 'both'], default: 'email' })
   notificationPreference: string;
 
-  @Prop({ type: String, enum: ['geo', 'ussd'], default: 'geo' })
-  callMode: string;
+  @Prop({ type: String, enum: ['landline', 'mobile'], default: 'landline' })
+  callReceivedOn: string;
 
   @Prop({ default: false })
   isMapped: boolean;

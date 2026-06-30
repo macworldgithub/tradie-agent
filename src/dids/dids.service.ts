@@ -77,10 +77,10 @@ export class DidsService {
       }
     }
 
-    const hasUssd = tradies.some((t) => t.callMode === 'ussd');
-    if (hasUssd && uniqueIds.length > 1) {
+    const hasMobile = tradies.some((t) => t.callReceivedOn === 'mobile');
+    if (hasMobile && uniqueIds.length > 1) {
       throw new BadRequestException(
-        'USSD tradies require a dedicated DID and cannot share it with other tradies',
+        'Mobile tradies require a dedicated DID and cannot share it with other tradies',
       );
     }
   }

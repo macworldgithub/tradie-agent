@@ -111,8 +111,8 @@ export class WebhookService {
         console.log('=== CALLLOG CREATED ===');
         console.log('status: initiated');
 
-        // If tradie is configured for USSD, skip dialing and go straight to SIP fallback
-        if (tradie?.callMode === 'ussd') {
+        // If tradie is configured for mobile, skip dialing and go straight to SIP fallback
+        if (tradie?.callReceivedOn === 'mobile') {
           // mark call as in_progress
           if (enfonicaCallId) {
             await this.callsService.updateCallStatus(enfonicaCallId, 'initiated');

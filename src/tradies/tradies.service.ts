@@ -35,7 +35,7 @@ export class TradiesService {
   }
 
   async update(id: string, dto: UpdateTradieDto): Promise<Tradie | null> {
-    if (dto.callMode === 'ussd') {
+    if (dto.callReceivedOn === 'mobile') {
       const assignedDids = await this.didModel
         .find({
           $or: [
@@ -59,7 +59,7 @@ export class TradiesService {
 
         if (uniqueTradieIds.size > 1) {
           throw new BadRequestException(
-            'USSD tradies require a dedicated DID and cannot share it with other tradies',
+            'Mobile tradies require a dedicated DID and cannot share it with other tradies',
           );
         }
       }

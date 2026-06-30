@@ -4,11 +4,11 @@ import { IsOptional, IsEnum } from 'class-validator';
 
 export class UpdateTradieDto extends PartialType(CreateTradieDto) {
   @ApiPropertyOptional({
-    example: 'geo',
-    enum: ['geo', 'ussd'],
-    default: 'geo',
+    example: 'landline',
+    enum: ['landline', 'mobile'],
+    default: 'landline',
   })
   @IsOptional()
-  @IsEnum(['geo', 'ussd'])
-  callMode?: string;
+  @IsEnum(['landline', 'mobile'])
+  callReceivedOn?: string;
 }

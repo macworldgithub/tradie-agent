@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Request, UseGuards, Req, Res, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Request, UseGuards, Req, Res, BadRequestException, Param, Body } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -47,6 +47,20 @@ export class PaymentsController {
     } catch (err) {
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
+  }
+
+  /**
+   * TEST ONLY — Manually set how many days remain on a company subscription.
+   * Usage: POST /payments/test/set-days/:companyId   body: { "days": 1 }
+   * No auth required for easy Postman testing.
+   */
+  @Post('test/set-days/:companyId')
+  async testSetDays(
+    @Param('companyId') companyId: string,
+    @Body() body: { days?: number },
+  ) {
+    const days = Number(body?.days ?? 1);
+    return this.paymentsService.setDaysRemaining(companyId, days);
   }
 }
 

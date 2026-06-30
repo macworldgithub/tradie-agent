@@ -104,7 +104,7 @@ export class AuthService implements OnModuleInit {
       email: dto.email,
       companyId: newUser._id.toString(),
       notificationPreference: dto.notificationPreference || 'email',
-      callMode: dto.callMode || 'geo',
+      callReceivedOn: dto.callReceivedOn || 'landline',
       country: dto.country,
     });
     await defaultTradie.save();

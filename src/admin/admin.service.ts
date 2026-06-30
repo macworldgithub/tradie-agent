@@ -189,7 +189,7 @@ export class AdminService {
     const validTradies = await this.tradieModel.find({ _id: { $in: unassignedIds } }).select('_id').lean().exec();
     const validIds = validTradies.map(t => String(t._id));
 
-    // Validate the remaining valid tradies (USSD checks, etc)
+    // Validate the remaining valid tradies (Mobile checks, etc)
     await this.didsService.validateTradieAssignments(undefined, validIds, did.companyId);
 
     did.assignedTradieIds = validIds;

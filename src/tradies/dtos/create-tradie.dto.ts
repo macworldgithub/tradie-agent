@@ -27,13 +27,13 @@ export class CreateTradieDto {
   notificationPreference?: string;
 
   @ApiPropertyOptional({
-    example: 'geo',
-    enum: ['geo', 'ussd'],
-    default: 'geo',
+    example: 'landline',
+    enum: ['landline', 'mobile'],
+    default: 'landline',
   })
   @IsOptional()
-  @IsEnum(['geo', 'ussd'])
-  callMode?: string;
+  @IsEnum(['landline', 'mobile'])
+  callReceivedOn?: string;
 
   @ApiPropertyOptional({ example: 'AU', enum: ['AU', 'NZ'] })
   @IsOptional()

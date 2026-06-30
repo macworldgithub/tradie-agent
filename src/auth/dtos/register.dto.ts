@@ -59,8 +59,8 @@ export class RegisterDto {
   @IsEnum(['email', 'sms', 'both'])
   notificationPreference: string;
 
-  @ApiProperty({ example: 'geo', enum: ['geo', 'ussd'] })
+  @ApiProperty({ example: 'landline', enum: ['landline', 'mobile'] })
   @IsNotEmpty()
-  @IsEnum(['geo', 'ussd'])
-  callMode: string;
+  @IsEnum(['landline', 'mobile'])
+  callReceivedOn: string;
 }

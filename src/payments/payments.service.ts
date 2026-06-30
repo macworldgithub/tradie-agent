@@ -77,6 +77,33 @@ export class PaymentsService {
     };
   }
 
+  // ─── TEST HELPER: manually set days remaining ───────────────────────
+
+  async setDaysRemaining(companyId: string, days: number) {
+    const user = await this.userModel.findById(companyId);
+    if (!user) throw new BadRequestException(`User ${companyId} not found`);
+
+    // Set subscriptionExpiresAt so daysRemaining = days from now
+    const newExpiry = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    user.subscriptionExpiresAt = newExpiry;
+    await user.save();
+
+    // Also backdate subscriptionStartDate on the DID so the fallback calc matches
+    const did = await this.didModel.findOne({ companyId: String(user._id) });
+    if (did) {
+      did.subscriptionStartDate = new Date(Date.now() - (30 - days) * 24 * 60 * 60 * 1000);
+      await did.save();
+    }
+
+    this.logger.warn(`[TEST] Set daysRemaining=${days} for user ${companyId}. subscriptionExpiresAt=${newExpiry.toISOString()}`);
+
+    return {
+      companyId,
+      daysRemaining: days,
+      subscriptionExpiresAt: newExpiry,
+    };
+  }
+
   // ─── Sync (for local testing — bypasses webhooks) ───────────────────
 
   async syncPaymentStatus(companyId: string) {
