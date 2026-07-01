@@ -26,11 +26,11 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Post('sync-session')
-  async syncSession(@Body() body: { session_id: string }) {
-    if (!body.session_id) {
+  async syncSession(@Body('session_id') sessionId: string) {
+    if (!sessionId) {
       throw new BadRequestException('session_id is required');
     }
-    return this.paymentsService.syncPaymentStatusBySessionId(body.session_id);
+    return this.paymentsService.syncPaymentStatusBySessionId(sessionId);
   }
 
 
