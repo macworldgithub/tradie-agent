@@ -77,15 +77,15 @@ export class EnfonicaService {
       }
     } catch (err: any) {
       this.logger.error(`Error purchasing Enfonica number for user ${userId}`, err.stack || err);
-      
-      const isProd = this.configService.get<string>('NODE_ENV') === 'production';
-      if (!isProd) {
-        this.logger.warn(`[LOCAL/DEV FALLBACK] Enfonica number purchase failed or not configured. Generating a mock number...`);
-        instanceName = `projects/mock-project/phoneNumberInstances/mock-${Date.now()}`;
-        phoneNumberString = `+6129${Math.floor(1000000 + Math.random() * 9000000)}`;
-      } else {
-        throw err;
-      }
+
+      // const isProd = this.configService.get<string>('NODE_ENV') === 'production';
+      // if (!isProd) {
+      //   this.logger.warn(`[LOCAL/DEV FALLBACK] Enfonica number purchase failed or not configured. Generating a mock number...`);
+      //   instanceName = `projects/mock-project/phoneNumberInstances/mock-${Date.now()}`;
+      //   phoneNumberString = `+6129${Math.floor(1000000 + Math.random() * 9000000)}`;
+      // } else {
+      throw err;
+      // }
     }
 
     // Wrap steps 2c to 7 in try/catch to log if setup fails after purchase
