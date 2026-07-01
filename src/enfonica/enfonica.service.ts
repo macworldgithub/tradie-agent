@@ -6,6 +6,7 @@ import { Did, DidDocument } from '../dids/schemas/did.schema';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
 import { AdminService } from '../admin/admin.service';
 import { PhoneNumbersClient, PhoneNumberInstancesClient } from '@enfonica/numbering';
+import { ConfigService } from '@nestjs/config';
 
 const INCOMING_CALL_WEBHOOK = "https://tradie.omnisuiteai.com/webhook/call";
 
@@ -20,6 +21,7 @@ export class EnfonicaService {
     @InjectModel(Did.name) private readonly didModel: Model<DidDocument>,
     @InjectModel(Tradie.name) private readonly tradieModel: Model<TradieDocument>,
     private readonly adminService: AdminService,
+    private readonly configService: ConfigService,
   ) { }
 
 
@@ -28,8 +30,9 @@ export class EnfonicaService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new Error(`User ${userId} not found`);
 
-    if (user.phoneNumberInstanceName) {
-      this.logger.warn(`User ${userId} already has a number provisioned. Skipping.`);
+    const existingDid = await this.didModel.findOne({ companyId: userId }).exec();
+    if (user.phoneNumberInstanceName || existingDid) {
+      this.logger.warn(`User ${userId} already has a number provisioned or DID exists. Skipping.`);
       return;
     }
 
@@ -74,16 +77,25 @@ export class EnfonicaService {
       }
     } catch (err: any) {
       this.logger.error(`Error purchasing Enfonica number for user ${userId}`, err.stack || err);
-      throw err;
+      
+      const isProd = this.configService.get<string>('NODE_ENV') === 'production';
+      if (!isProd) {
+        this.logger.warn(`[LOCAL/DEV FALLBACK] Enfonica number purchase failed or not configured. Generating a mock number...`);
+        instanceName = `projects/mock-project/phoneNumberInstances/mock-${Date.now()}`;
+        phoneNumberString = `+6129${Math.floor(1000000 + Math.random() * 9000000)}`;
+      } else {
+        throw err;
+      }
     }
 
     // Wrap steps 2c to 7 in try/catch to log if setup fails after purchase
     try {
       // 2c. Immediately set incoming call webhook (mandatory)
+      const incomingCallWebhook = this.configService.get<string>('INCOMING_CALL_WEBHOOK') || INCOMING_CALL_WEBHOOK;
       await this.phoneNumberInstancesClient.updatePhoneNumberInstance({
         name: instanceName,
         phoneNumberInstance: {
-          incomingCallHandlerUris: [INCOMING_CALL_WEBHOOK],
+          incomingCallHandlerUris: [incomingCallWebhook],
         },
         updateMask: {
           paths: ['incoming_call_handler_uris'],

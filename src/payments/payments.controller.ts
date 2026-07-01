@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Request, UseGuards, Req, Res, BadRequestException, Param, Body } from '@nestjs/common';
+import { Controller, Get, Post, Request, UseGuards, Req, Res, BadRequestException, Param, Body, Query, Logger } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
 
 @Controller('payments')
 export class PaymentsController {
+  private readonly logger = new Logger(PaymentsController.name);
+
   constructor(private readonly paymentsService: PaymentsService) { }
 
   @UseGuards(JwtAuthGuard)
@@ -35,6 +37,7 @@ export class PaymentsController {
   @Post('webhook')
   async handleWebhook(@Req() req: any, @Res() res: any) {
     const signature = req.headers['stripe-signature'] as string;
+    this.logger.log(`Received Stripe webhook event notification (signature length: ${signature?.length || 0})`);
 
     const payload = req.rawBody;
     if (!payload) {
@@ -66,8 +69,21 @@ export class PaymentsController {
 
 @Controller()
 export class PaymentPagesController {
+  private readonly logger = new Logger(PaymentPagesController.name);
+
+  constructor(private readonly paymentsService: PaymentsService) { }
+
   @Get('payment-success')
-  paymentSuccess(@Res() res: any) {
+  async paymentSuccess(@Query('session_id') sessionId: string, @Res() res: any) {
+    this.logger.log(`Handling payment-success redirect. session_id: ${sessionId}`);
+    if (sessionId) {
+      try {
+        await this.paymentsService.syncPaymentStatusBySessionId(sessionId);
+      } catch (err: any) {
+        this.logger.error(`Error during payment-success sync: ${err.message}`);
+      }
+    }
+
     res.status(200).send(`
       <!DOCTYPE html>
       <html>

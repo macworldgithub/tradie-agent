@@ -228,12 +228,56 @@ export class PaymentsService {
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: successUrl,
+      success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: cancelUrl,
       client_reference_id: companyId,
     });
 
     return { url: session.url };
+  }
+
+  // ─── Sync Status By Session ID ──────────────────────────────────────
+
+  async syncPaymentStatusBySessionId(sessionId: string) {
+    if (!this.stripe) throw new BadRequestException('Stripe is not configured');
+
+    const session = await this.stripe.checkout.sessions.retrieve(sessionId);
+    if (!session) {
+      throw new BadRequestException('Checkout session not found');
+    }
+
+    if (session.status !== 'complete' || session.payment_status !== 'paid') {
+      this.logger.warn(`Checkout session ${sessionId} is not paid (status: ${session.status}, payment: ${session.payment_status})`);
+      return { synced: false, message: 'Session is not paid' };
+    }
+
+    const customerId = session.customer as string;
+    const email = session.customer_details?.email;
+    const companyId = session.client_reference_id;
+
+    const user = await this.findUserByStripeInfo(customerId, email, companyId);
+    if (!user) {
+      throw new BadRequestException(`User not found for Stripe customer ${customerId} / email ${email}`);
+    }
+
+    // Save stripe IDs if not already saved
+    if (customerId && !user.stripeCustomerId) {
+      user.stripeCustomerId = customerId;
+    }
+    if (session.subscription) {
+      user.stripeSubscriptionId = session.subscription as string;
+    }
+
+    // Check if the user is already updated to avoid repeating Enfonica flow
+    if (user.hasPaid) {
+      this.logger.log(`User ${user.email} is already marked as paid. Skipping redundant sync.`);
+      return { synced: true, message: 'User is already paid', hasPaid: true };
+    }
+
+    await this.processSuccessfulPayment(user);
+    this.logger.log(`Payment synced successfully via session redirect for user ${user.email}`);
+
+    return { synced: true, hasPaid: true };
   }
 
   // ─── Webhook Entry Point ────────────────────────────────────────────
