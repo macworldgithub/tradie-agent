@@ -25,6 +25,19 @@ export class EnfonicaService {
   ) { }
 
 
+  private getRegulatoryListing(countryCode: string): string {
+    if (countryCode === 'AU') {
+      const listing = process.env.ENFONICA_REGULATORY_LISTING_ID_AU;
+      if (!listing) throw new Error('Missing env var: ENFONICA_REGULATORY_LISTING_ID_AU');
+      return listing;
+    }
+    if (countryCode === 'NZ') {
+      const listing = process.env.ENFONICA_REGULATORY_LISTING_ID_NZ;
+      if (!listing) throw new Error('Missing env var: ENFONICA_REGULATORY_LISTING_ID_NZ');
+      return listing;
+    }
+    throw new Error(`Unsupported country code for regulatory listing: ${countryCode}`);
+  }
 
   async provisionFirstTimeDid(userId: string) {
     const user = await this.userModel.findById(userId);
@@ -61,7 +74,7 @@ export class EnfonicaService {
         parent,
         phoneNumberInstance: {
           phoneNumber: { name: selectedNumber.name },
-          regulatoryListing: process.env.ENFONICA_REGULATORY_LISTING_ID
+          regulatoryListing: this.getRegulatoryListing(country)
         }
       } as any);
 

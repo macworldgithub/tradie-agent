@@ -5,9 +5,9 @@
 const { RegulatoryListingsClient } = require('@enfonica/numbering');
 
 // Directly point to the key file in your project root — no env var involved
-const keyFile = require('path').resolve(__dirname, 'bele-ai-real-key.json');
+const keyFile = require('path').resolve(__dirname, '1778493974316.json');
 
-const PROJECT = 'projects/bele-ai-pty-ltd-knu1';
+const PROJECT = 'projects/bele-ai-demo';
 
 (async () => {
     try {
