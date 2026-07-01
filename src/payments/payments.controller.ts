@@ -23,16 +23,7 @@ export class PaymentsController {
     return this.paymentsService.createCheckoutSession(req.user?.companyId);
   }
 
-  /**
-   * Manually sync payment status from Stripe API.
-   * Use this when webhooks can't reach your server (e.g. localhost testing).
-   */
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @Post('sync')
-  async syncPayment(@Request() req) {
-    return this.paymentsService.syncPaymentStatus(req.user?.companyId);
-  }
+
 
   @Post('webhook')
   async handleWebhook(@Req() req: any, @Res() res: any) {
