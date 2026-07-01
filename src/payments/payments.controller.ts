@@ -37,18 +37,26 @@ export class PaymentsController {
 
   @Post('webhook')
   async handleWebhook(@Req() req: any, @Res() res: any) {
+    this.logger.log('========================================================================');
+    this.logger.log('🚨 STRIPE WEBHOOK ENDPOINT HIT IN CONTROLLER 🚨');
+    this.logger.log('========================================================================');
+
     const signature = req.headers['stripe-signature'] as string;
-    this.logger.log(`Received Stripe webhook event notification (signature length: ${signature?.length || 0})`);
+    this.logger.log(`Webhook Signature Length: ${signature?.length || 'MISSING'}`);
 
     const payload = req.rawBody;
     if (!payload) {
+      this.logger.error('CRITICAL: Raw body is missing in webhook request. Check main.ts configuration.');
       throw new BadRequestException('Raw body is missing. Ensure rawBody is enabled in main.ts');
     }
 
     try {
+      this.logger.log('Passing payload to PaymentsService.handleWebhook...');
       await this.paymentsService.handleWebhook(signature, payload);
+      this.logger.log('✅ Webhook successfully processed by service, sending 200 OK');
       res.status(200).send();
     } catch (err) {
+      this.logger.error(`❌ Webhook Error caught in controller: ${err.message}`);
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
   }

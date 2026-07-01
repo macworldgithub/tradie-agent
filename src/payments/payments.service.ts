@@ -209,6 +209,7 @@ export class PaymentsService {
   // ─── Webhook Entry Point ────────────────────────────────────────────
 
   async handleWebhook(signature: string, payload: Buffer) {
+    this.logger.log('--- ENTERING PaymentsService.handleWebhook ---');
     if (!this.stripe) throw new BadRequestException('Stripe is not configured');
 
     const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
@@ -218,13 +219,15 @@ export class PaymentsService {
     let event: any;
 
     try {
+      this.logger.log('Constructing Stripe Event from payload...');
       event = this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      this.logger.log('✅ Stripe Event successfully constructed!');
     } catch (err) {
-      this.logger.error(`Webhook signature verification failed: ${err.message}`);
+      this.logger.error(`❌ Webhook signature verification failed: ${err.message}`);
       throw new BadRequestException(`Webhook Error: ${err.message}`);
     }
 
-    this.logger.log(`Received Stripe webhook event: ${event.type}`);
+    this.logger.log(`>>>>> Processing Stripe webhook event type: [ ${event.type} ] <<<<<`);
 
     switch (event.type) {
       case 'checkout.session.completed':
@@ -253,17 +256,21 @@ export class PaymentsService {
    *   Scenario 3: Service restoration (tradies were unmapped by cron, restore them)
    */
   private async handleCheckoutCompleted(session: any) {
+    this.logger.log(`--- ENTERING handleCheckoutCompleted for session ${session.id} ---`);
     const customerId = session.customer as string;
     const email = session.customer_details?.email;
 
+    this.logger.log(`Looking up user for customerId: ${customerId}, email: ${email}, client_reference: ${session.client_reference_id}`);
     const user = await this.findUserByStripeInfo(customerId, email, session.client_reference_id);
 
     if (!user) {
       this.logger.warn(
-        `User not found for Stripe customer ${customerId} / email ${email}`,
+        `❌ User not found for Stripe customer ${customerId} / email ${email}. Cannot process webhook further.`,
       );
       return;
     }
+
+    this.logger.log(`✅ User found: ${user.email} (ID: ${user._id})`);
 
     const wasMarked = await this.markAsProcessed(session.id, String(user._id), 'checkout.session.completed');
     if (!wasMarked) {
