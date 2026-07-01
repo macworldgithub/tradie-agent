@@ -8,6 +8,7 @@ import { Did, DidDocument } from '../dids/schemas/did.schema';
 import { AdminService } from '../admin/admin.service';
 import { EnfonicaService } from '../enfonica/enfonica.service';
 import Stripe from 'stripe';
+import { ProcessedPayment, ProcessedPaymentDocument } from './schemas/processed-payment.schema';
 
 @Injectable()
 export class PaymentsService {
@@ -17,6 +18,7 @@ export class PaymentsService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
+    @InjectModel(ProcessedPayment.name) private processedPaymentModel: Model<ProcessedPaymentDocument>,
     private configService: ConfigService,
     private adminService: AdminService,
     private enfonicaService: EnfonicaService,
@@ -32,6 +34,18 @@ export class PaymentsService {
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────
+
+  async markAsProcessed(stripeId: string, companyId: string, eventType: string): Promise<boolean> {
+    try {
+      await this.processedPaymentModel.create({ stripeId, companyId, eventType });
+      return true;
+    } catch (err: any) {
+      if (err.code === 11000) {
+        return false;
+      }
+      throw err;
+    }
+  }
 
   private daysSince(date?: Date): number {
     if (!date) return 30;
@@ -130,6 +144,27 @@ export class PaymentsService {
     if (subscriptions.data.length > 0) {
       const subscription = subscriptions.data[0];
 
+      // Use current billing period start time as part of the unique ID to prevent double syncs for the same cycle
+      const periodId = `sub_period_${subscription.id}_${subscription.current_period_start}`;
+      const wasMarked = await this.markAsProcessed(periodId, String(user._id), 'subscription.sync');
+
+      if (!wasMarked) {
+        this.logger.log(`Active subscription period ${periodId} was already synced for user ${user.email}. Skipping sync.`);
+        const msRemaining = user.subscriptionExpiresAt
+          ? new Date(user.subscriptionExpiresAt).getTime() - Date.now()
+          : 30 * 24 * 3600 * 1000;
+
+        return {
+          synced: true,
+          message: 'Active subscription already synced.',
+          hasPaid: true,
+          lastPaymentDate: user.lastPaymentDate,
+          subscriptionId: subscription.id,
+          subscriptionExpiresAt: user.subscriptionExpiresAt,
+          daysRemaining: Math.max(0, Math.ceil(msRemaining / (1000 * 3600 * 24))),
+        };
+      }
+
       // Run the same 3-scenario logic as the webhook
       await this.processSuccessfulPayment(user);
 
@@ -167,6 +202,24 @@ export class PaymentsService {
     );
 
     if (completedSession) {
+      const wasMarked = await this.markAsProcessed(completedSession.id, String(user._id), 'checkout.session.completed');
+      
+      if (!wasMarked) {
+        this.logger.log(`Completed checkout session ${completedSession.id} already processed for user ${user.email}. Skipping.`);
+        const msRemaining = user.subscriptionExpiresAt
+          ? new Date(user.subscriptionExpiresAt).getTime() - Date.now()
+          : 30 * 24 * 3600 * 1000;
+
+        return {
+          synced: true,
+          message: 'Completed checkout session already processed.',
+          hasPaid: true,
+          lastPaymentDate: user.lastPaymentDate,
+          subscriptionExpiresAt: user.subscriptionExpiresAt,
+          daysRemaining: Math.max(0, Math.ceil(msRemaining / (1000 * 3600 * 24))),
+        };
+      }
+
       await this.processSuccessfulPayment(user);
 
       this.logger.log(
@@ -260,18 +313,18 @@ export class PaymentsService {
       throw new BadRequestException(`User not found for Stripe customer ${customerId} / email ${email}`);
     }
 
+    const wasMarked = await this.markAsProcessed(sessionId, String(user._id), 'checkout.session.completed');
+    if (!wasMarked) {
+      this.logger.log(`Checkout session ${sessionId} was already processed for user ${user.email}. Skipping redirect sync.`);
+      return { synced: true, message: 'Session already processed', hasPaid: true };
+    }
+
     // Save stripe IDs if not already saved
     if (customerId && !user.stripeCustomerId) {
       user.stripeCustomerId = customerId;
     }
     if (session.subscription) {
       user.stripeSubscriptionId = session.subscription as string;
-    }
-
-    // Check if the user is already updated to avoid repeating Enfonica flow
-    if (user.hasPaid) {
-      this.logger.log(`User ${user.email} is already marked as paid. Skipping redundant sync.`);
-      return { synced: true, message: 'User is already paid', hasPaid: true };
     }
 
     await this.processSuccessfulPayment(user);
@@ -339,6 +392,12 @@ export class PaymentsService {
       return;
     }
 
+    const wasMarked = await this.markAsProcessed(session.id, String(user._id), 'checkout.session.completed');
+    if (!wasMarked) {
+      this.logger.log(`Checkout session ${session.id} was already processed for user ${user.email}. Skipping webhook.`);
+      return;
+    }
+
     // Save stripe IDs immediately
     if (customerId && !user.stripeCustomerId) {
       user.stripeCustomerId = customerId;
@@ -363,6 +422,12 @@ export class PaymentsService {
 
     if (!user) {
       this.logger.warn(`User not found for invoice customer ${customerId}`);
+      return;
+    }
+
+    const wasMarked = await this.markAsProcessed(invoice.id, String(user._id), 'invoice.paid');
+    if (!wasMarked) {
+      this.logger.log(`Invoice ${invoice.id} was already processed for user ${user.email}. Skipping.`);
       return;
     }
 
