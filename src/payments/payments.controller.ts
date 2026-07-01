@@ -23,6 +23,16 @@ export class PaymentsController {
     return this.paymentsService.createCheckoutSession(req.user?.companyId);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('sync-session')
+  async syncSession(@Body() body: { session_id: string }) {
+    if (!body.session_id) {
+      throw new BadRequestException('session_id is required');
+    }
+    return this.paymentsService.syncPaymentStatusBySessionId(body.session_id);
+  }
+
 
 
   @Post('webhook')
