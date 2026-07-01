@@ -15,8 +15,7 @@ async function bootstrap() {
   // Enable CORS
   app.enableCors();
 
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+
   // Global validation pipe for DTOs
   app.useGlobalPipes(
     new ValidationPipe({
