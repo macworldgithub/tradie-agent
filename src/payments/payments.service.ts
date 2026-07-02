@@ -398,30 +398,19 @@ export class PaymentsService {
           this.logger.log(`Service still active. Skipping remap, just renewing for ${user.email}`);
         }
 
-        // Always extend the DID subscription
-        await this.adminService.renewDid(String(did._id));
+        // Always extend the DID subscription.
+        // renewDid() handles extending user.subscriptionExpiresAt by 30 days (what the cron checks).
+        const renewResult = await this.adminService.renewDid(String(did._id));
+        this.logger.log(
+          `Returning user ${user.email} renewed. Expires: ${renewResult?.newSubscriptionExpiresAt?.toISOString() ?? 'unknown'}`,
+        );
       } else {
         this.logger.warn(`Returning user has no DID record to remap/renew: ${userId}`);
+        // No DID to renew — at minimum mark as paid
+        user.hasPaid = true;
+        user.lastPaymentDate = new Date();
+        await user.save();
       }
-
-      // Update user record
-      user.hasPaid = true;
-      user.lastPaymentDate = new Date();
-
-      // Stack 30 days onto remaining time: max(currentExpiry, now) + 30 days
-      const now = new Date();
-      const currentExpiry = user.subscriptionExpiresAt
-        ? new Date(user.subscriptionExpiresAt)
-        : now;
-      const baseDate = currentExpiry > now ? currentExpiry : now;
-      user.subscriptionExpiresAt = new Date(
-        baseDate.getTime() + 30 * 24 * 60 * 60 * 1000,
-      );
-
-      await user.save();
-      this.logger.log(
-        `Returning user ${user.email} renewed. Expires: ${user.subscriptionExpiresAt.toISOString()}`,
-      );
     } else {
       // ─── First-time user (Scenario 1) ───
       this.logger.log(`First-time user payment. Triggering Enfonica flow for ${user.email}`);
