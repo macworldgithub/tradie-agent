@@ -281,6 +281,9 @@ export class PaymentsService {
       this.logger.log(
         `Returning user ${user.email} — skipping checkout.session.completed (renewal handled by invoice.paid).`,
       );
+      // IMPORTANT: Mark session as processed so syncPaymentStatusBySessionId
+      // (triggered by the /payment-success redirect) cannot double-stack days.
+      await this.markAsProcessed(session.id, String(user._id), 'checkout.session.completed');
       // Still save stripe IDs if missing
       let changed = false;
       if (customerId && !user.stripeCustomerId) { user.stripeCustomerId = customerId; changed = true; }
