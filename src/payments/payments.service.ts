@@ -272,6 +272,23 @@ export class PaymentsService {
 
     this.logger.log(`✅ User found: ${user.email} (ID: ${user._id})`);
 
+    // ── RETURNING USER GUARD ──────────────────────────────────────────────
+    // For returning users (already have a DID provisioned), the renewal is
+    // handled exclusively by invoice.paid. checkout.session.completed fires
+    // alongside invoice.paid on every subscription renewal and would double-stack
+    // days if we processed it here too. Only first-time users need this event.
+    if (user.phoneNumberInstanceName) {
+      this.logger.log(
+        `Returning user ${user.email} — skipping checkout.session.completed (renewal handled by invoice.paid).`,
+      );
+      // Still save stripe IDs if missing
+      let changed = false;
+      if (customerId && !user.stripeCustomerId) { user.stripeCustomerId = customerId; changed = true; }
+      if (session.subscription && !user.stripeSubscriptionId) { user.stripeSubscriptionId = session.subscription; changed = true; }
+      if (changed) await user.save();
+      return;
+    }
+
     const wasMarked = await this.markAsProcessed(session.id, String(user._id), 'checkout.session.completed');
     if (!wasMarked) {
       this.logger.log(`Checkout session ${session.id} was already processed for user ${user.email}. Skipping webhook.`);
@@ -286,7 +303,7 @@ export class PaymentsService {
       user.stripeSubscriptionId = session.subscription;
     }
 
-    // Run the 3-scenario payment logic
+    // Run first-time payment logic (Scenario 1 only)
     await this.processSuccessfulPayment(user);
   }
 
