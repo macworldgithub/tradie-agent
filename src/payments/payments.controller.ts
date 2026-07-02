@@ -63,7 +63,7 @@ export class PaymentsController {
 
   /**
    * TEST ONLY — Manually set how many days remain on a company subscription.
-   * Usage: POST /payments/test/set-days/:companyId   body: { "days": 1 }
+   * Usage: POST /payments/test/set-days/:companyId   body: { "days": 0 }
    * No auth required for easy Postman testing.
    */
   @Post('test/set-days/:companyId')
@@ -71,7 +71,7 @@ export class PaymentsController {
     @Param('companyId') companyId: string,
     @Body() body: { days?: number },
   ) {
-    const days = Number(body?.days ?? 1);
+    const days = Number(body?.days ?? 0);
     return this.paymentsService.setDaysRemaining(companyId, days);
   }
 }
