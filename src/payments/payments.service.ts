@@ -9,6 +9,8 @@ import { AdminService } from '../admin/admin.service';
 import { EnfonicaService } from '../enfonica/enfonica.service';
 import Stripe from 'stripe';
 import { ProcessedPayment, ProcessedPaymentDocument } from './schemas/processed-payment.schema';
+import { MailService } from '../common/mail/mail.service';
+import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
 
 @Injectable()
 export class PaymentsService {
@@ -19,9 +21,11 @@ export class PaymentsService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
     @InjectModel(ProcessedPayment.name) private processedPaymentModel: Model<ProcessedPaymentDocument>,
+    @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
     private configService: ConfigService,
     private adminService: AdminService,
     private enfonicaService: EnfonicaService,
+    private mailService: MailService,
   ) {
     const stripeSecret = this.configService.get<string>('STRIPE_SECRET_KEY');
     if (!stripeSecret) {
@@ -422,6 +426,16 @@ export class PaymentsService {
 
       // Provision the phone number, create DID, map tradie
       await this.enfonicaService.provisionFirstTimeDid(userId);
+
+      // Check if tradie has callReceivedOn set to 'mobile' to send forwarding instructions
+      const tradie = await this.tradieModel.findOne({ companyId: userId }).exec();
+      if (tradie && tradie.callReceivedOn === 'mobile') {
+        const did = await this.didModel.findOne({ companyId: userId }).exec();
+        if (did && did.didNumber) {
+          this.logger.log(`Sending Call Forwarding Instructions Email to ${user.email}`);
+          await this.mailService.sendCallForwardingInstructionsEmail(user.email, did.didNumber);
+        }
+      }
     }
   }
 
