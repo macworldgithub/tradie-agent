@@ -427,10 +427,9 @@ export class PaymentsService {
 
   // ─── Cron: Auto-Expiry ──────────────────────────────────────────────
 
-  // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron(CronExpression.EVERY_6_HOURS)
   async handleSubscriptionAutoExpiry() {
-    this.logger.log('Running daily subscription auto-expiry check...');
+    this.logger.log('Running 6 Hours subscription auto-expiry check...');
     const now = new Date();
 
     // Find users where subscriptionExpiresAt < now AND hasPaid = true
