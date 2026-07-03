@@ -432,8 +432,12 @@ export class PaymentsService {
       if (tradie && tradie.callReceivedOn === 'mobile') {
         const did = await this.didModel.findOne({ companyId: userId }).exec();
         if (did && did.didNumber) {
-          this.logger.log(`Sending Call Forwarding Instructions Email to ${user.email}`);
-          await this.mailService.sendCallForwardingInstructionsEmail(user.email, did.didNumber);
+          this.logger.log(`Sending Call Forwarding Instructions Email to ${user.email} (Country: ${user.country})`);
+          try {
+            await this.mailService.sendCallForwardingInstructionsEmail(user.email, did.didNumber, user.country);
+          } catch (emailErr: any) {
+            this.logger.error(`Failed to send Call Forwarding Instructions Email to ${user.email}: ${emailErr.message}`, emailErr.stack);
+          }
         }
       }
     }
