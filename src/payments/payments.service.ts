@@ -427,7 +427,8 @@ export class PaymentsService {
 
   // ─── Cron: Auto-Expiry ──────────────────────────────────────────────
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  // @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_MINUTE)
   async handleSubscriptionAutoExpiry() {
     this.logger.log('Running daily subscription auto-expiry check...');
     const now = new Date();
