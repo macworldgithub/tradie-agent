@@ -74,7 +74,9 @@ export class WebhookService {
       }
 
       const tradies = await this.tradiesService.findByIds(rawIds);
-      const validTradies = tradies.filter((t) => t.phoneNumber && t.phoneNumber.startsWith('+'));
+      const validTradies = tradies.filter(
+        (t) => (t.phoneNumber && t.phoneNumber.startsWith('+')) || t.callReceivedOn === 'mobile'
+      );
       const validTradieNumbers = validTradies.map((t) => t.phoneNumber as string);
 
       if (validTradieNumbers.length === 0) {
