@@ -222,8 +222,13 @@ export class DidsService {
 
     await this.validateTradieAssignments(assignedTradieId, assignedTradieIds, existing.companyId);
 
+    const updateQuery: any = { $set: { ...dto } };
+    if (dto.assignedTradieId) {
+      updateQuery.$addToSet = { assignedTradieIds: dto.assignedTradieId };
+    }
+
     return this.didModel
-      .findByIdAndUpdate(id, dto, { new: true, runValidators: true })
+      .findByIdAndUpdate(id, updateQuery, { new: true, runValidators: true })
       .populate('assignedTradieId', 'name phoneNumber email')
       .lean()
       .exec();
