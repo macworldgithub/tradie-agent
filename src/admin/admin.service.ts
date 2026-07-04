@@ -154,13 +154,27 @@ export class AdminService {
 
     await this.didsService.validateTradieAssignments(undefined, combined, companyId);
 
-    const updated = await this.didModel
-      .findByIdAndUpdate(
-        existing._id,
-        { $set: { assignedTradieIds: combined } },
-        { new: true, runValidators: true },
-      )
-      .exec();
+    const setQuery: any = { assignedTradieIds: combined };
+    if (didNumber && didNumber !== existing.didNumber) {
+      setQuery.didNumber = didNumber;
+    }
+    if (tradieId) {
+      setQuery.assignedTradieId = tradieId;
+    }
+
+    let updated;
+    try {
+      updated = await this.didModel
+        .findByIdAndUpdate(
+          existing._id,
+          { $set: setQuery },
+          { new: true, runValidators: true },
+        )
+        .exec();
+    } catch (e) {
+      if (e.code === 11000) throw new BadRequestException('DID number already in use.');
+      throw e;
+    }
 
     await this.tradiesService.updateIsMapped(tradieId, true);
     // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
