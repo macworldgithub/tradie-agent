@@ -107,15 +107,33 @@ export class DidsService {
       if (dto.assignedTradieId) {
         updateQuery.$addToSet = { assignedTradieIds: dto.assignedTradieId };
       }
+      const setQuery: any = {};
+      if (dto.didNumber && dto.didNumber !== existing.didNumber) {
+        setQuery.didNumber = dto.didNumber;
+      }
+      if (dto.assignedTradieId) {
+        setQuery.assignedTradieId = dto.assignedTradieId;
+      }
+      if (Object.keys(setQuery).length > 0) {
+        updateQuery.$set = setQuery;
+      }
 
-      const updated = await this.didModel
-        .findByIdAndUpdate(
-          existing._id,
-          Object.keys(updateQuery).length > 0 ? updateQuery : { $set: {} },
-          { new: true, runValidators: true }
-        )
-        .populate('assignedTradieId', 'name phoneNumber email')
-        .exec();
+      let updated;
+      try {
+        updated = await this.didModel
+          .findByIdAndUpdate(
+            existing._id,
+            Object.keys(updateQuery).length > 0 ? updateQuery : { $set: {} },
+            { new: true, runValidators: true }
+          )
+          .populate('assignedTradieId', 'name phoneNumber email')
+          .exec();
+      } catch (error) {
+        if (error.code === 11000) {
+          throw new BadRequestException('This DID number is already registered to another account.');
+        }
+        throw error;
+      }
 
       if (dto.assignedTradieId) {
         await this.tradiesService.updateIsMapped(dto.assignedTradieId, true);

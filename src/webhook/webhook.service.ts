@@ -131,6 +131,7 @@ export class WebhookService {
     <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
   </Call>
 </Response>`;
+          console.log('=== VOICEML BEING SENT (MOBILE AI-BRIDGE) ===\n', voiceML);
           return { type: 'voiceml', body: voiceML };
         }
 
