@@ -12,7 +12,7 @@ export class ContactFormService {
   constructor(
     @InjectModel(ContactForm.name) private contactFormModel: Model<ContactFormDocument>,
     private notificationService: NotificationService,
-  ) {}
+  ) { }
 
   async create(dto: CreateContactFormDto): Promise<ContactForm> {
     const createdForm = new this.contactFormModel(dto);
@@ -28,9 +28,9 @@ Email: ${dto.email}
 Message:
 ${dto.message}
       `.trim();
-      
+
       await this.notificationService.sendEmail(
-        'Info@mia.ai.com.au, syeddyaseenn@gmail.com',
+        'Info@miaai.com.au, syeddyaseenn@gmail.com',
         'New Contact Us Form Submission',
         emailBody
       );
