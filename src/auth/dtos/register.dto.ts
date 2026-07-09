@@ -63,4 +63,9 @@ export class RegisterDto {
   @IsNotEmpty()
   @IsEnum(['landline', 'mobile'])
   callReceivedOn: string;
+
+  @ApiProperty({ example: 'sydney', required: true })
+  @IsNotEmpty()
+  @IsString()
+  cityCode: string;
 }

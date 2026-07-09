@@ -7,6 +7,8 @@ import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
 import { AdminService } from '../admin/admin.service';
 import { PhoneNumbersClient, PhoneNumberInstancesClient } from '@enfonica/numbering';
 import { ConfigService } from '@nestjs/config';
+import { getPrefixForCity, InvalidCityError, NoNumbersAvailableError } from '../config/au-city-prefixes';
+import { BadRequestException } from '@nestjs/common';
 
 const INCOMING_CALL_WEBHOOK = "https://tradie.omnisuiteai.com/webhook/call";
 
@@ -50,15 +52,31 @@ export class EnfonicaService {
     }
 
     const country = user.country || 'AU';
+    const cityCode = user.cityCode;
+
+    if (!cityCode) {
+      throw new BadRequestException('City code is missing for user');
+    }
+
+    let prefix: string;
+    try {
+      prefix = getPrefixForCity(cityCode);
+    } catch (error) {
+      if (error instanceof InvalidCityError) {
+        throw new BadRequestException('INVALID_CITY');
+      }
+      throw error;
+    }
 
     // 2a. Search phone numbers
     const [numbers] = await this.phoneNumbersClient.searchPhoneNumbers({
       countryCode: country,
       numberType: 'LOCAL',
+      prefix
     });
 
     if (!numbers || numbers.length === 0) {
-      throw new Error(`No numbers available for country: ${country}`);
+      throw new BadRequestException(`No numbers currently available for ${user.cityName || cityCode}, please try again shortly or pick another city`);
     }
 
     const selectedNumber = numbers[0];

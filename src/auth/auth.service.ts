@@ -16,6 +16,7 @@ import { RegisterDto } from './dtos/register.dto';
 import { LoginDto } from './dtos/login.dto';
 import { MailService } from '../common/mail/mail.service';
 import { generateToken } from './utils/token.util';
+import { getCityNameForCode, InvalidCityError } from '../config/au-city-prefixes';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
 
 @Injectable()
@@ -86,11 +87,22 @@ export class AuthService implements OnModuleInit {
     });
     if (existing) throw new BadRequestException('Email already registered');
 
+    let cityName: string;
+    try {
+      cityName = getCityNameForCode(dto.cityCode);
+    } catch (error) {
+      if (error instanceof InvalidCityError) {
+        throw new BadRequestException('INVALID_CITY');
+      }
+      throw error;
+    }
+
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const newUser = new this.userModel({
       ...dto,
+      cityName,
       password: hashedPassword,
       emailVerified: false,
       emailVerificationToken: otp,

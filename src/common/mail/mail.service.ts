@@ -20,7 +20,7 @@ export class MailService {
 
   async sendOtpEmail(to: string, otp: string) {
     await this.transporter.sendMail({
-      from: `"Omni Suite AI" <${this.configService.get<string>('SMTP_USER')}>`,
+      from: `"Mia.AI Tradie Agent" <${this.configService.get<string>('SMTP_USER')}>`,
       to, // recipient from user form
       subject: 'Email Verification OTP',
       html: `
@@ -73,7 +73,7 @@ export class MailService {
         
         <h2 style="color: #0056b3;">Spark</h2>
         <p><strong>No Answer</strong><br><code>*61*${didNumber}#</code></p>
-        <p><em>(Optional delay example: <code>*61*${didNumber}*11#</code>)</em></p>
+        <p><em>(Typical Delay is 15 Seconds</code>)</em></p>
         <p><strong>Busy</strong><br><code>*67*${didNumber}#</code></p>
         <p><strong>Unreachable</strong><br><code>*62*${didNumber}#</code></p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
@@ -94,14 +94,14 @@ export class MailService {
         <h1 style="color: #222;">Australia</h1>
         
         <h2 style="color: #0056b3;">Telstra</h2>
-        <p><strong>No Answer</strong><br><code>*61*${didNumber}*[10-30]#</code></p>
+        <p><strong>No Answer</strong><br><code>*61*${didNumber}*#</code></p>
         <p><strong>Busy</strong><br><code>*67*${didNumber}#</code></p>
         <p><strong>Unreachable</strong><br><code>*62*${didNumber}#</code></p>
         <p><em><strong>Notes:</strong> Default ring time is approximately 15 seconds. To change the ring delay (up to 30 seconds), contact Telstra on <strong>132 200</strong>.</em></p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
 
         <h2 style="color: #0056b3;">Optus</h2>
-        <p><strong>No Answer</strong><br><code>**61*${didNumber}**[Seconds]#</code></p>
+        <p><strong>No Answer</strong><br><code>**61*${didNumber}**#</code></p>
         <p><strong>Busy</strong><br><code>**67*${didNumber}#</code></p>
         <p><strong>Unreachable</strong><br><code>**62*${didNumber}#</code></p>
         <p><em><strong>Notes:</strong> Contact <strong>133 937</strong> if you need to adjust the ring delay.</em></p>

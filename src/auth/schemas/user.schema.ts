@@ -62,6 +62,12 @@ export class User {
   @Prop({ enum: ['AU', 'NZ'] })
   country?: string;
 
+  @Prop()
+  cityCode?: string;
+
+  @Prop()
+  cityName?: string;
+
 
   @Prop()
   phoneNumberInstanceName?: string;
