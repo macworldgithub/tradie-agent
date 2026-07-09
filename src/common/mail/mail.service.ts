@@ -18,37 +18,58 @@ export class MailService {
     });
   }
 
+  /** Shared banner attachment — embedded as an inline CID image */
+  private get bannerAttachment() {
+    return {
+      filename: 'banner.jpeg',
+      path: require('path').join(process.cwd(), 'public', 'banner.jpeg'),
+      cid: 'mia-banner@tradie',
+    };
+  }
+
+  /** Wraps any body HTML in a consistent branded shell with the banner */
+  private wrapHtml(bodyHtml: string): string {
+    return `
+      <div style="font-family: sans-serif; color: #333; max-width: 600px; margin: 0 auto;">
+        <img src="cid:mia-banner@tradie" alt="Mia.AI Tradie Agent Support" style="width: 100%; max-width: 600px; display: block; margin-bottom: 24px;" />
+        ${bodyHtml}
+      </div>
+    `;
+  }
+
   async sendOtpEmail(to: string, otp: string) {
     await this.transporter.sendMail({
-      from: `"Mia.AI Tradie Agent" <${this.configService.get<string>('SMTP_USER')}>`,
+      from: `"Mia.AI Tradie Agent Support" <${this.configService.get<string>('SMTP_USER')}>`,
       to, // recipient from user form
       subject: 'Email Verification OTP',
-      html: `
+      html: this.wrapHtml(`
         <h2>Email Verification</h2>
         <p>Your OTP is:</p>
         <h1>${otp}</h1>
         <p>This OTP will expire in 10 minutes.</p>
-      `,
+      `),
+      attachments: [this.bannerAttachment],
     });
   }
 
   async sendNewPasswordEmail(to: string, newPassword: string) {
     await this.transporter.sendMail({
-      from: `"Support" <${this.configService.get('SMTP_USER')}>`,
+      from: `"Mia.AI Tradie Agent Support" <${this.configService.get('SMTP_USER')}>`,
       to,
       subject: 'Your New Password',
-      html: `
+      html: this.wrapHtml(`
         <h2>Password Reset</h2>
         <p>Your new password is:</p>
         <h3>${newPassword}</h3>
         <p>Please login and change it immediately.</p>
-      `,
+      `),
+      attachments: [this.bannerAttachment],
     });
   }
 
   async sendCallForwardingInstructionsEmail(to: string, didNumber: string, country?: string) {
-    const htmlContent = `
-      <div style="font-family: sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    const htmlContent = this.wrapHtml(`
+      <div style="line-height: 1.6; padding: 0 20px 20px;">
         <h1 style="color: #0056b3;">📞 Call Forwarding Setup Instructions</h1>
         <p>Thank you for your purchase!</p>
         <p>To ensure your calls are forwarded to your new DID number, please enable <strong>Conditional Call Forwarding</strong> on your mobile.</p>
@@ -73,7 +94,7 @@ export class MailService {
         
         <h2 style="color: #0056b3;">Spark</h2>
         <p><strong>No Answer</strong><br><code>*61*${didNumber}#</code></p>
-        <p><em>(Typical Delay is 15 Seconds</code>)</em></p>
+        <p><em>(Typical Delay is 15 Seconds)</em></p>
         <p><strong>Busy</strong><br><code>*67*${didNumber}#</code></p>
         <p><strong>Unreachable</strong><br><code>*62*${didNumber}#</code></p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
@@ -129,13 +150,14 @@ export class MailService {
         <p>Most providers support Conditional Call Forwarding using similar GSM/USSD codes. Please refer to your mobile provider's official documentation or customer support and use the equivalent <strong>No Answer</strong>, <strong>Busy</strong>, and <strong>Unreachable</strong> forwarding codes with your DID number.</p>
         <p>If you need any assistance, please contact our support team—we'll be happy to help you get everything set up.</p>
       </div>
-    `;
+    `);
 
     await this.transporter.sendMail({
-      from: `"Support" <${this.configService.get('SMTP_USER')}>`,
+      from: `"Mia.AI Tradie Agent Support" <${this.configService.get('SMTP_USER')}>`,
       to,
       subject: '📞 Call Forwarding Setup Instructions',
       html: htmlContent,
+      attachments: [this.bannerAttachment],
     });
   }
 }
