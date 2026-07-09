@@ -54,29 +54,32 @@ export class EnfonicaService {
     const country = user.country || 'AU';
     const cityCode = user.cityCode;
 
-    if (!cityCode) {
-      throw new BadRequestException('City code is missing for user');
-    }
+    let prefix: string | undefined;
 
-    let prefix: string;
-    try {
-      prefix = getPrefixForCity(cityCode);
-    } catch (error) {
-      if (error instanceof InvalidCityError) {
-        throw new BadRequestException('INVALID_CITY');
+    if (country === 'AU') {
+      if (!cityCode) {
+        throw new BadRequestException('City code is missing for AU user');
       }
-      throw error;
+      try {
+        prefix = getPrefixForCity(cityCode);
+        this.logger.log(`Provisioning AU number: cityCode=${cityCode} → prefix=${prefix}`);
+      } catch (error) {
+        if (error instanceof InvalidCityError) {
+          throw new BadRequestException('INVALID_CITY');
+        }
+        throw error;
+      }
     }
 
-    // 2a. Search phone numbers
-    const [numbers] = await this.phoneNumbersClient.searchPhoneNumbers({
-      countryCode: country,
-      numberType: 'LOCAL',
-      prefix
-    });
+    // 2a. Search phone numbers (prefix only sent for AU)
+    const searchParams: any = { countryCode: country, numberType: 'LOCAL' };
+    if (prefix) searchParams.prefix = prefix;
+
+    const [numbers] = await this.phoneNumbersClient.searchPhoneNumbers(searchParams);
 
     if (!numbers || numbers.length === 0) {
-      throw new BadRequestException(`No numbers currently available for ${user.cityName || cityCode}, please try again shortly or pick another city`);
+      const location = country === 'AU' ? (user.cityName || cityCode) : country;
+      throw new BadRequestException(`No numbers currently available for ${location}, please try again shortly or pick another city`);
     }
 
     const selectedNumber = numbers[0];

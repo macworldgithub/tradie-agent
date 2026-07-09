@@ -87,14 +87,17 @@ export class AuthService implements OnModuleInit {
     });
     if (existing) throw new BadRequestException('Email already registered');
 
-    let cityName: string;
-    try {
-      cityName = getCityNameForCode(dto.cityCode);
-    } catch (error) {
-      if (error instanceof InvalidCityError) {
-        throw new BadRequestException('INVALID_CITY');
+    let cityName: string | undefined;
+    if (dto.country === 'AU') {
+      if (!dto.cityCode) throw new BadRequestException('City code is required for Australia');
+      try {
+        cityName = getCityNameForCode(dto.cityCode);
+      } catch (error) {
+        if (error instanceof InvalidCityError) {
+          throw new BadRequestException('INVALID_CITY');
+        }
+        throw error;
       }
-      throw error;
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
