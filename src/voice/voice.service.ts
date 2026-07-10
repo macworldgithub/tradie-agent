@@ -412,6 +412,8 @@ export class VoiceService {
       }
     }
 
+    this.logger.log(`[${callId}] Tradie name resolved for AI prompt: ${tradieName}`);
+
     try {
       await this.createRealtimeSession(callId, async (event) => {
         this.logger.log(`[${callId}] Voice event: ${event.type}`);
