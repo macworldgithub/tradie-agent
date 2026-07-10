@@ -390,9 +390,15 @@ export class VoiceService {
     }
 
     let tradieName: string | null = null;
+
+    this.logger.log(`[${callId}] calledNumber for tradie lookup: ${calledNumber}`);
+
     if (calledNumber) {
       try {
         const didRecord = await this.didsService.findByDidNumber(calledNumber);
+        
+        this.logger.log(`[${callId}] DID record found: ${didRecord ? JSON.stringify(didRecord) : 'null'}`);
+        
         if (didRecord) {
           const extractId = (val: any): string | undefined =>
             val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
