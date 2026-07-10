@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { PaymentsController, PaymentPagesController } from './payments.controller';
+import { PaymentsController, PaymentPagesController, SubscriptionsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { User, UserSchema } from '../auth/schemas/user.schema';
 import { Did, DidSchema } from '../dids/schemas/did.schema';
@@ -23,7 +23,7 @@ import { MailModule } from '../common/mail/mail.module';
     EnfonicaModule,
     MailModule,
   ],
-  controllers: [PaymentsController, PaymentPagesController],
+  controllers: [PaymentsController, PaymentPagesController, SubscriptionsController],
   providers: [PaymentsService]
 })
 export class PaymentsModule { }

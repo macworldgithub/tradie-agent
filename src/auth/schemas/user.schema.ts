@@ -77,6 +77,9 @@ export class User {
 
   @Prop()
   subscriptionExpiresAt?: Date;
+
+  @Prop({ default: false })
+  cancelAtPeriodEnd?: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

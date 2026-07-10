@@ -122,8 +122,57 @@ export class PaymentsService {
     };
   }
 
+  // ─── Subscriptions Cancellation ───────────────────────────────────────
 
+  async cancelAtPeriodEnd(companyId: string) {
+    const user = await this.userModel.findById(companyId).exec();
+    if (!user) throw new BadRequestException('User not found');
 
+    const subscriptionId = user.stripeSubscriptionId;
+    if (!subscriptionId) {
+      throw new BadRequestException('No active Stripe subscription found for this user');
+    }
+
+    try {
+      await this.stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: true,
+      });
+
+      user.cancelAtPeriodEnd = true;
+      await user.save();
+
+      this.logger.log(`User ${user.email} set subscription to cancel at period end`);
+      return { success: true, cancelAtPeriodEnd: true };
+    } catch (err: any) {
+      this.logger.error(`Failed to cancel subscription for user ${user.email}: ${err.message}`);
+      throw new BadRequestException(`Failed to cancel subscription: ${err.message}`);
+    }
+  }
+
+  async resumeSubscription(companyId: string) {
+    const user = await this.userModel.findById(companyId).exec();
+    if (!user) throw new BadRequestException('User not found');
+
+    const subscriptionId = user.stripeSubscriptionId;
+    if (!subscriptionId) {
+      throw new BadRequestException('No active Stripe subscription found for this user');
+    }
+
+    try {
+      await this.stripe.subscriptions.update(subscriptionId, {
+        cancel_at_period_end: false,
+      });
+
+      user.cancelAtPeriodEnd = false;
+      await user.save();
+
+      this.logger.log(`User ${user.email} resumed subscription (cancelled cancel_at_period_end)`);
+      return { success: true, cancelAtPeriodEnd: false };
+    } catch (err: any) {
+      this.logger.error(`Failed to resume subscription for user ${user.email}: ${err.message}`);
+      throw new BadRequestException(`Failed to resume subscription: ${err.message}`);
+    }
+  }
   // ─── Checkout Session Creation ──────────────────────────────────────
 
   async createCheckoutSession(companyId: string) {
@@ -243,6 +292,9 @@ export class PaymentsService {
       case 'invoice.payment_failed':
         await this.handleInvoicePaymentFailed(event.data.object);
         break;
+      case 'customer.subscription.updated':
+        await this.handleSubscriptionUpdated(event.data.object);
+        break;
       case 'customer.subscription.deleted':
         await this.handleSubscriptionCancelled(event.data.object);
         break;
@@ -360,9 +412,37 @@ export class PaymentsService {
       .exec();
 
     if (user) {
+      if (user.stripeSubscriptionId && user.stripeSubscriptionId !== subscription.id) {
+        this.logger.log(`Ignoring cancelled subscription ${subscription.id} for user ${user.email} (active sub is ${user.stripeSubscriptionId})`);
+        return;
+      }
+
       user.hasPaid = false;
+      user.cancelAtPeriodEnd = false; // reset when deleted
       await user.save();
       this.logger.log(`Subscription cancelled for user ${user.email}`);
+    }
+  }
+
+  private async handleSubscriptionUpdated(subscription: any) {
+    const customerId = subscription.customer as string;
+
+    const user = await this.userModel
+      .findOne({ stripeCustomerId: customerId })
+      .exec();
+
+    if (user) {
+      if (user.stripeSubscriptionId && user.stripeSubscriptionId !== subscription.id) {
+        this.logger.log(`Ignoring updated subscription ${subscription.id} for user ${user.email} (active sub is ${user.stripeSubscriptionId})`);
+        return;
+      }
+
+      const cancelAtPeriodEnd = subscription.cancel_at_period_end;
+      if (user.cancelAtPeriodEnd !== cancelAtPeriodEnd) {
+        user.cancelAtPeriodEnd = cancelAtPeriodEnd;
+        await user.save();
+        this.logger.log(`Synced cancel_at_period_end=${cancelAtPeriodEnd} for user ${user.email} from Stripe webhook`);
+      }
     }
   }
 

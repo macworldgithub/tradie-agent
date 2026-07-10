@@ -125,3 +125,24 @@ export class PaymentPagesController {
     `);
   }
 }
+
+@Controller('subscriptions')
+export class SubscriptionsController {
+  constructor(private readonly paymentsService: PaymentsService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('cancel')
+  async cancelSubscription(@Request() req) {
+    // Uses req.user?.companyId to verify ownership automatically through auth guard
+    return this.paymentsService.cancelAtPeriodEnd(req.user?.companyId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('resume')
+  async resumeSubscription(@Request() req) {
+    return this.paymentsService.resumeSubscription(req.user?.companyId);
+  }
+}
+
