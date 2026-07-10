@@ -171,6 +171,7 @@ export class VoiceService {
         'We could not connect your call right now. Please try again later.',
       );
     }
+    this.logger.log(`[${callSid}] Tradie name resolved for AI prompt: ${tradie.name}`);
 
     this.logger.log(
       `DID lookup succeeded for did=${didRaw} tradie=${tradie.phoneNumber}`,
@@ -395,10 +396,10 @@ export class VoiceService {
         if (didRecord) {
           const extractId = (val: any): string | undefined =>
             val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
-          
+
           const resolvedTradieId = extractId(didRecord.assignedTradieId) ||
             (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? extractId(didRecord.assignedTradieIds[0]) : undefined);
-            
+
           if (resolvedTradieId) {
             const tradieObj = await this.tradiesService.findById(String(resolvedTradieId));
             if (tradieObj && tradieObj.name) {
