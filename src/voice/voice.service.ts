@@ -390,32 +390,25 @@ export class VoiceService {
     }
 
     let tradieName: string | null = null;
+    try {
+      if (resolvedEnfonicaCallId) {
+        const callLog = await this.callsService.findByEnfonicaCallId(resolvedEnfonicaCallId);
+        this.logger.log(`[${callId}] CallLog found: ${callLog ? 'yes' : 'null'}`);
 
-    this.logger.log(`[${callId}] calledNumber for tradie lookup: ${calledNumber}`);
+        const tradieId = callLog?.tradieId
+          || (callLog?.tradieIds?.length ? callLog.tradieIds[0] : null);
 
-    if (calledNumber) {
-      try {
-        const didRecord = await this.didsService.findByDidNumber(calledNumber);
-        
-        this.logger.log(`[${callId}] DID record found: ${didRecord ? JSON.stringify(didRecord) : 'null'}`);
-        
-        if (didRecord) {
-          const extractId = (val: any): string | undefined =>
-            val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
+        this.logger.log(`[${callId}] tradieId from CallLog: ${tradieId}`);
 
-          const resolvedTradieId = extractId(didRecord.assignedTradieId) ||
-            (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? extractId(didRecord.assignedTradieIds[0]) : undefined);
-
-          if (resolvedTradieId) {
-            const tradieObj = await this.tradiesService.findById(String(resolvedTradieId));
-            if (tradieObj && tradieObj.name) {
-              tradieName = tradieObj.name;
-            }
+        if (tradieId) {
+          const tradieObj = await this.tradiesService.findById(String(tradieId));
+          if (tradieObj?.name) {
+            tradieName = tradieObj.name;
           }
         }
-      } catch (err) {
-        this.logger.error(`[${callId}] Failed to fetch tradie name: ${err.message}`);
       }
+    } catch (err) {
+      this.logger.error(`[${callId}] Failed to fetch tradie name: ${err.message}`);
     }
 
     this.logger.log(`[${callId}] Tradie name resolved for AI prompt: ${tradieName}`);
