@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { CallsService } from '../calls/calls.service';
 import { TradiesService } from '../tradies/tradies.service';
-import { NotificationService } from '../common/notification.service';
+import { MailService } from '../common/mail/mail.service';
 import { Customer, CustomerDocument } from './Schema/customer.schema';
 
 interface CallEndedEvent {
@@ -21,7 +21,7 @@ export class EmailWorkerService {
   constructor(
     private readonly callsService: CallsService,
     private readonly tradiesService: TradiesService,
-    private readonly notificationService: NotificationService,
+    private readonly mailService: MailService,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
   ) { }
@@ -163,7 +163,26 @@ ${tradieInfoSection}
 
       // 6. Send the email via NotificationService
       this.logger.log(`Sending post-call summary email to: ${recipientEmail}${ccEmails.length > 0 ? ` (CC: ${ccEmails.join(',')})` : ''}`);
-      await this.notificationService.sendEmail(recipientEmail, subject, body, ccEmails.length > 0 ? ccEmails : undefined);
+      await this.mailService.sendPostCallSummaryEmail(
+        recipientEmail,
+        ccEmails.length > 0 ? ccEmails : undefined,
+        subject,
+        {
+          customerName: customer.name || 'N/A',
+          customerPhone: customerNumber,
+          address: customer.address || 'N/A',
+          urgency: customer.urgency || 'N/A',
+          serviceType: customer.serviceType || 'N/A',
+          problemDescription: customer.problemDescription || 'N/A',
+          preferredTime: customer.preferredTime || 'N/A',
+          summary: customer.summary || 'N/A',
+          didNumber: callRecord.didNumber || didNumber,
+          startTime: formattedStartTime,
+          endTime: formattedEndTime,
+          duration: durationSeconds,
+          tradieInfo: tradieInfoSection,
+        },
+      );
       this.logger.log(`Successfully sent email to: ${recipientEmail}`);
     } catch (err) {
       this.logger.error(`Failed to process post-call email for ${enfonicaCallId}:`, err);
