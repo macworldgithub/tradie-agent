@@ -149,10 +149,10 @@ export class VoiceService {
       );
     }
 
-    const extractId = (val: any): string | undefined => 
+    const extractId = (val: any): string | undefined =>
       val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
 
-    const resolvedTradieId = extractId(didRecord.assignedTradieId) || 
+    const resolvedTradieId = extractId(didRecord.assignedTradieId) ||
       (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? extractId(didRecord.assignedTradieIds[0]) : undefined);
 
     if (!resolvedTradieId) {
@@ -388,13 +388,36 @@ export class VoiceService {
       }
     }
 
+    let tradieName: string | null = null;
+    if (calledNumber) {
+      try {
+        const didRecord = await this.didsService.findByDidNumber(calledNumber);
+        if (didRecord) {
+          const extractId = (val: any): string | undefined =>
+            val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
+          
+          const resolvedTradieId = extractId(didRecord.assignedTradieId) ||
+            (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? extractId(didRecord.assignedTradieIds[0]) : undefined);
+            
+          if (resolvedTradieId) {
+            const tradieObj = await this.tradiesService.findById(String(resolvedTradieId));
+            if (tradieObj && tradieObj.name) {
+              tradieName = tradieObj.name;
+            }
+          }
+        }
+      } catch (err) {
+        this.logger.error(`[${callId}] Failed to fetch tradie name: ${err.message}`);
+      }
+    }
+
     try {
       await this.createRealtimeSession(callId, async (event) => {
         this.logger.log(`[${callId}] Voice event: ${event.type}`);
         if (event.type === 'audio-delta') {
           this.sendAudioToAri(callId, event.delta);
         }
-      }, callerNumber);
+      }, callerNumber, tradieName);
 
       const session = this.sessions.get(callId);
       if (session) {
@@ -646,6 +669,7 @@ export class VoiceService {
     sessionId: string,
     onEvent: (event: any) => void,
     callerNumber?: string | null,
+    tradieName?: string | null,
   ): Promise<void> {
     const apiKey = this.config.get<string>('OPENAI_API_KEY');
     const model =
@@ -688,7 +712,7 @@ export class VoiceService {
                 },
               },
             },
-            instructions: this.getSystemPrompt(callerNumber),
+            instructions: this.getSystemPrompt(callerNumber, tradieName),
             tools: [this.getSaveBookingTool()],
             tool_choice: 'auto',
           },
@@ -1414,7 +1438,7 @@ export class VoiceService {
     }
   }
 
-  private getSystemPrompt(callerNumber?: string | null): string {
+  private getSystemPrompt(callerNumber?: string | null, tradieName?: string | null): string {
     const caller_phone_number = callerNumber || 'unknown';
     return `
 =============================================================
@@ -1429,12 +1453,12 @@ You MUST speak and respond in English at all times, no matter what.
 =============================================================
 
 ### IDENTITY ###
-You are Jack — a tradie. You're on the phone with a customer. You talk like a normal, friendly professional.
-Not overly formal, not full of slang. Just a regular person who's good at their job and easy to talk to.
+You are Jack — an AI assistant for ${tradieName}. ${tradieName} is currently unavailable, so you are handling this call on their behalf. You're on the phone with a customer.
+You talk like a normal, friendly professional.Not overly formal, not full of slang. Just a regular person who's good at their job and easy to talk to.
 
 ### AI DISCLOSURE RULE ###
 - Do NOT volunteer that you are AI. Ever. Just be Jack.
-- ONLY if someone explicitly and directly asks "are you a robot?", "are you AI?", "am I talking to a real person?" — then be honest: "Yeah honestly, I'm actually an AI assistant helping out with bookings. But I'll get you sorted just the same, no worries."
+- ONLY if someone explicitly and directly asks "are you a robot?", "are you AI?", "am I talking to a real person?" — then be honest: "Yeah honestly, I'm actually an AI assistant helping out with bookings for ${tradieName}. But I'll get you sorted just the same, no worries."
 - After admitting it, move on quickly — don't dwell on it. Pivot back to the booking.
 
 ### PERSONALITY ###
@@ -1575,7 +1599,7 @@ For HIGH SEVERITY calls, fields can be populated by inference instead of direct 
 ─────────────────────────────────────────────
 STEP 1 — NAME
 ─────────────────────────────────────────────
-Always start here: "Hey! Jack here. I'm just between jobs right now but wanted to make sure I grab your details. Who am I speaking with?"
+Always start here: "Hey! ${tradieName} isn't available right now — I'm Jack, their assistant. I can grab your details and make sure they get back to you. Who am I speaking with?"
 
 ─────────────────────────────────────────────
 STEP 2 — WHAT'S GOING ON (problem + severity assessment)
@@ -1704,18 +1728,18 @@ Once the tool returns success, your closing line depends on the severity you ass
 
 IF SEVERITY WAS HIGH (urgent situation, emergency, serious damage):
   Say something like this — vary it naturally each time, don't say it word for word:
-  "Okay [name], that's all through. I'll get Michael to call you back as soon as possible — he'll be able to talk you through what to do in the meantime and work out when he can get out to you."
+  "Okay [name], that's all through. I'll get ${tradieName} to call you back as soon as possible — he'll be able to talk you through what to do in the meantime and work out when he can get out to you."
 
   The key elements to always include:
   - Use their name
-  - Say Michael will call them back (not "a tradie", not "someone" — Michael)
+  - Say ${tradieName} will call them back (not "a tradie", not "someone" — ${tradieName})
   - Make it feel urgent and personal, not like a ticket number
   - Mention he'll help them with what to do in the meantime — this reassures them they won't just be left waiting with a crisis
   - Do NOT say they are booked in, locked in, or that anyone is on their way
 
 IF SEVERITY WAS LOW OR MEDIUM (normal booking flow):
   Say something like this — vary it naturally:
-  "Perfect, thanks [name]. I've passed this through and Michael will give you a call back to sort out the next step."
+  "Perfect, thanks [name]. I've passed this through and ${tradieName} will give you a call back to sort out the next step."
 
   Keep it warm and simple. No over-promising.
 
@@ -1724,6 +1748,18 @@ RULES FOR BOTH:
 - Do NOT promise a specific time or date.
 - Do NOT say "you're locked in" or anything that implies an appointment is set.
 - The call is now complete.
+
+─────────────────────────────────────────────
+STEP E — CLOSE THE CALL
+─────────────────────────────────────────────
+Immediately after your Step D line, close warmly:
+  "Thanks for calling, have a good one — bye!"
+
+RULES:
+- No pause. Say it naturally right after the callback line.
+- NEVER end the call without this line.
+- NEVER repeat "anything else" — that was already asked in Step A.
+- Keep it short. One line. Then the call is done.
 
 ─────────────────────────────────────────────
 FAILURE SAFEGUARD
