@@ -70,7 +70,7 @@ export class MailService {
   async sendCallForwardingInstructionsEmail(to: string, didNumber: string, country?: string) {
     const htmlContent = this.wrapHtml(`
       <div style="line-height: 1.6; padding: 0 20px 20px;">
-        <h1 style="color: #0056b3;">ðŸ“ž Call Forwarding Setup Instructions</h1>
+        <h1 style="color: #0056b3;"> Call Forwarding Setup Instructions</h1>
         <p>Thank you for your purchase!</p>
         <p>To ensure your calls are forwarded to your new DID number, please enable <strong>Conditional Call Forwarding</strong> on your mobile.</p>
         <div style="background-color: #f8f9fa; border-left: 4px solid #0056b3; padding: 15px; margin: 20px 0;">
@@ -81,9 +81,9 @@ export class MailService {
         <h2 style="color: #444; border-bottom: 2px solid #eee; padding-bottom: 5px;">Why are there 3 forwarding options?</h2>
         <p>We recommend enabling <strong>all three</strong> forwarding conditions so that your calls are handled in every possible situation:</p>
         <ul>
-          <li><strong>No Answer</strong> â€“ Your phone rings but you don't answer. After the configured delay, the call is forwarded.</li>
-          <li><strong>Busy</strong> â€“ You're already on another call. The new call is forwarded immediately.</li>
-          <li><strong>Unreachable</strong> â€“ Your phone is switched off, has no signal, or is in flight mode. The call is forwarded immediately.</li>
+          <li><strong>No Answer</strong> Your phone rings but you don't answer. After the configured delay, the call is forwarded.</li>
+          <li><strong>Busy</strong> You're already on another call. The new call is forwarded immediately.</li>
+          <li><strong>Unreachable</strong> Your phone is switched off, has no signal, or is in flight mode. The call is forwarded immediately.</li>
         </ul>
         <p>If you only want forwarding in certain situations, you can enable only the conditions that suit your needs.</p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
@@ -148,14 +148,14 @@ export class MailService {
         <h2 style="color: #444;">Don't see your mobile provider?</h2>
         <p>If your mobile operator is not listed above, don't worry.</p>
         <p>Most providers support Conditional Call Forwarding using similar GSM/USSD codes. Please refer to your mobile provider's official documentation or customer support and use the equivalent <strong>No Answer</strong>, <strong>Busy</strong>, and <strong>Unreachable</strong> forwarding codes with your DID number.</p>
-        <p>If you need any assistance, please contact our support teamâ€”we'll be happy to help you get everything set up.</p>
+        <p>If you need any assistance, please contact our support team we'll be happy to help you get everything set up.</p>
       </div>
     `);
 
     await this.transporter.sendMail({
       from: `"Mia.AI Tradie Agent Support" <${this.configService.get('SMTP_USER')}>`,
       to,
-      subject: 'ðŸ“ž Call Forwarding Setup Instructions',
+      subject: 'Call Forwarding Setup Instructions',
       html: htmlContent,
       attachments: [this.bannerAttachment],
     });
