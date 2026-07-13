@@ -11,6 +11,7 @@ import Stripe from 'stripe';
 import { ProcessedPayment, ProcessedPaymentDocument } from './schemas/processed-payment.schema';
 import { MailService } from '../common/mail/mail.service';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
+import { NumberPortingService } from '../number-porting/number-porting.service';
 
 @Injectable()
 export class PaymentsService {
@@ -26,6 +27,7 @@ export class PaymentsService {
     private adminService: AdminService,
     private enfonicaService: EnfonicaService,
     private mailService: MailService,
+    private numberPortingService: NumberPortingService,
   ) {
     const stripeSecret = this.configService.get<string>('STRIPE_SECRET_KEY');
     if (!stripeSecret) {
@@ -503,6 +505,16 @@ export class PaymentsService {
       user.hasPaid = true;
       user.lastPaymentDate = new Date();
       await user.save();
+
+      // ── Porting guard ───────────────────────────────────────────────────
+      // If the company is porting an existing number, skip Enfonica provisioning.
+      // Their subscription is active — the number arrives later via the porting process.
+      const isPorting = await this.numberPortingService.isCompanyPorting(userId);
+      if (isPorting) {
+        this.logger.log(`Company ${userId} is porting a number — skipping Enfonica DID provisioning.`);
+        return;
+      }
+      // ───────────────────────────────────────────────────────────────────
 
       // Provision the phone number, create DID, map tradie
       await this.enfonicaService.provisionFirstTimeDid(userId);

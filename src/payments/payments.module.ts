@@ -10,6 +10,7 @@ import { AdminModule } from '../admin/admin.module';
 import { EnfonicaModule } from '../enfonica/enfonica.module';
 import { Tradie, TradieSchema } from '../tradies/schemas/tradie.schema';
 import { MailModule } from '../common/mail/mail.module';
+import { NumberPortingModule } from '../number-porting/number-porting.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { MailModule } from '../common/mail/mail.module';
     AdminModule,
     EnfonicaModule,
     MailModule,
+    NumberPortingModule,
   ],
   controllers: [PaymentsController, PaymentPagesController, SubscriptionsController],
   providers: [PaymentsService]
