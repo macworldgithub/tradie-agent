@@ -11,6 +11,9 @@ import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import { User, UserDocument } from './schemas/user.schema';
 import { RegisterDto } from './dtos/register.dto';
 import { LoginDto } from './dtos/login.dto';
@@ -18,6 +21,7 @@ import { MailService } from '../common/mail/mail.service';
 import { generateToken } from './utils/token.util';
 import { getCityNameForCode, InvalidCityError } from '../config/au-city-prefixes';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
+import { NumberPorting, NumberPortingDocument } from '../number-porting/schemas/number-porting.schema';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -26,6 +30,7 @@ export class AuthService implements OnModuleInit {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
+    @InjectModel(NumberPorting.name) private numberPortingModel: Model<NumberPortingDocument>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
@@ -81,11 +86,33 @@ export class AuthService implements OnModuleInit {
     });
   }
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, file?: Express.Multer.File) {
     const existing = await this.userModel.findOne({
       email: dto.email.toLowerCase(),
     });
     if (existing) throw new BadRequestException('Email already registered');
+
+    let portingData = null;
+    if (dto.porting) {
+      if (!file) throw new BadRequestException('Supporting document is required for number porting');
+      if (file.mimetype !== 'application/pdf' || !file.originalname.toLowerCase().endsWith('.pdf')) {
+        throw new BadRequestException('Supporting document must be a PDF file');
+      }
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        throw new BadRequestException('Supporting document must be less than 5MB');
+      }
+      try {
+        portingData = typeof dto.numberPorting === 'string' ? JSON.parse(dto.numberPorting) : dto.numberPorting;
+      } catch (e) {
+        throw new BadRequestException('Invalid numberPorting JSON format');
+      }
+      const requiredFields = ['displayName', 'numberToPort', 'providerName', 'accountNumber', 'entityType', 'identificationNumber', 'address', 'city', 'state', 'postcode', 'country', 'authorisedContact'];
+      for (const field of requiredFields) {
+        if (!(portingData as any)[field]) {
+          throw new BadRequestException(`Field ${field} is required when porting is true`);
+        }
+      }
+    }
 
     let cityName: string | undefined;
     if (dto.country === 'AU') {
@@ -103,26 +130,79 @@ export class AuthService implements OnModuleInit {
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    const newUser = new this.userModel({
-      ...dto,
-      cityName,
-      password: hashedPassword,
-      emailVerified: false,
-      emailVerificationToken: otp,
-    });
+    const session = await this.userModel.db.startSession();
+    
+    let savedFilePath: string | null = null;
+    let newUser;
+    try {
+      session.startTransaction();
 
-    await newUser.save();
+      newUser = new this.userModel({
+        ...dto,
+        cityName,
+        password: hashedPassword,
+        emailVerified: false,
+        emailVerificationToken: otp,
+      });
 
-    const defaultTradie = new this.tradieModel({
-      name: dto.customerName,
-      phoneNumber: dto.mobileNumber,
-      email: dto.email,
-      companyId: newUser._id.toString(),
-      notificationPreference: dto.notificationPreference || 'email',
-      callReceivedOn: dto.callReceivedOn || 'landline',
-      country: dto.country,
-    });
-    await defaultTradie.save();
+      await newUser.save({ session });
+
+      const defaultTradie = new this.tradieModel({
+        name: dto.customerName,
+        phoneNumber: dto.mobileNumber,
+        email: dto.email,
+        companyId: newUser._id.toString(),
+        notificationPreference: dto.notificationPreference || 'email',
+        callReceivedOn: dto.callReceivedOn || 'landline',
+        country: dto.country,
+      });
+      await defaultTradie.save({ session });
+
+      if (dto.porting) {
+        const companyIdStr = newUser._id.toString();
+        const uploadDir = path.join(process.cwd(), 'uploads', 'number-porting', companyIdStr);
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        
+        // Sanitize filename — file! is safe here: we throw above if file is missing when porting=true
+        const safeOriginalName = path.basename(file!.originalname).replace(/[^a-zA-Z0-9.\-_]/g, '');
+        const ext = path.extname(safeOriginalName).toLowerCase();
+        const uniqueFilename = `${uuidv4()}${ext}`;
+        savedFilePath = path.join(uploadDir, uniqueFilename);
+        
+        // Save file securely
+        fs.writeFileSync(savedFilePath, file!.buffer, { mode: 0o600 });
+
+        const newPorting = new this.numberPortingModel({
+          companyId: companyIdStr,
+          porting: true,
+          ...(portingData || {}),
+          supportingDocumentPath: savedFilePath,
+        });
+        await newPorting.save({ session });
+      } else {
+        const newPorting = new this.numberPortingModel({
+          companyId: newUser._id.toString(),
+          porting: false,
+        });
+        await newPorting.save({ session });
+      }
+
+      await session.commitTransaction();
+    } catch (error) {
+      await session.abortTransaction();
+      if (savedFilePath && fs.existsSync(savedFilePath)) {
+        try {
+          fs.unlinkSync(savedFilePath);
+        } catch (e) {
+          this.logger.error(`Failed to delete file during rollback: ${savedFilePath}`, e);
+        }
+      }
+      throw error;
+    } finally {
+      session.endSession();
+    }
 
     await this.mailService.sendOtpEmail(dto.email, otp);
 

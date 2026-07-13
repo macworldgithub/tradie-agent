@@ -7,6 +7,7 @@ import { User, UserSchema } from './schemas/user.schema';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../common/mail/mail.module';
 import { Tradie, TradieSchema } from '../tradies/schemas/tradie.schema';
+import { NumberPortingModule } from '../number-porting/number-porting.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { Tradie, TradieSchema } from '../tradies/schemas/tradie.schema';
     ]),
     JwtModule.register({}), // config handled manually in service
     MailModule,
+    NumberPortingModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

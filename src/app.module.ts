@@ -16,6 +16,7 @@ import { AdminModule } from './admin/admin.module';
 import { PaymentsModule } from './payments/payments.module';
 import { ContactFormModule } from './contact-form/contact-form.module';
 import { EnfonicaModule } from './enfonica/enfonica.module';
+import { NumberPortingModule } from './number-porting/number-porting.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { EnfonicaModule } from './enfonica/enfonica.module';
     PaymentsModule,
     ContactFormModule,
     EnfonicaModule,
+    NumberPortingModule,
   ],
 })
 export class AppModule {}

@@ -5,7 +5,9 @@ import {
   IsString,
   MinLength,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class RegisterDto {
@@ -68,4 +70,15 @@ export class RegisterDto {
   @IsNotEmpty()
   @IsString()
   cityCode: string;
+
+  @ApiProperty({ example: 'true', required: false })
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  porting?: boolean;
+
+  @ApiProperty({ example: '{"displayName": "My Business", "numberToPort": "0412345678"}', required: false })
+  @IsOptional()
+  @IsString()
+  numberPorting?: string;
 }

@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UseGuards, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RegisterDto } from './dtos/register.dto';
@@ -15,9 +16,13 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Register new user' })
-  register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  @UseInterceptors(FileInterceptor('supportingDocument'))
+  @ApiOperation({ summary: 'Register new user with optional number porting' })
+  register(
+    @Body() dto: RegisterDto,
+    @UploadedFile() file?: Express.Multer.File
+  ) {
+    return this.authService.register(dto, file);
   }
 
   @Post('login')
