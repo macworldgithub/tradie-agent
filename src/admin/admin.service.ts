@@ -196,36 +196,61 @@ export class AdminService {
         }, { new: true })
         .exec();
 
-      // If this is a porting customer, shift their Stripe billing cycle forward by 30 days
-      // so their payment anniversary matches their true go-live date. Completely ignores Enfonica automated users.
+      // If this is a porting customer, shift their EXISTING Stripe subscription's
+      // billing cycle forward by 30 days from right now, so their payment anniversary
+      // matches their true go-live date. Completely ignores Enfonica automated users.
+      //
+      // NOTE: We update the existing subscription in place via trial_end rather than
+      // creating a new subscription + cancelling the old one. Creating a new sub with a
+      // future billing_cycle_anchor but no trial_end causes Stripe to reject the call
+      // ("When billing_cycle_anchor follows a trial, the anchored invoice must be
+      // prorated") since it implicitly creates an un-reconciled trial gap. Updating
+      // trial_end directly avoids that conflict entirely, keeps the same subscription ID
+      // (no lost discounts/metadata/payment method), and has a guard below to make sure
+      // we only ever push the date forward, never backward.
       const isPorting = await this.numberPortingModel.findOne({ companyId, porting: true }).exec();
       if (isPorting && this.stripe && updatedCompany?.stripeSubscriptionId) {
         try {
-          // To set the billing cycle to exactly 30 days from now, we need to create a new subscription
-          // with the correct billing_cycle_anchor, then cancel the old one
-          const subscription = await this.stripe.subscriptions.retrieve(updatedCompany.stripeSubscriptionId);
-          
-          // Create new subscription with billing cycle anchored to 30 days from now
-          const newBillingDate = Math.floor(now.getTime() / 1000) + (30 * 24 * 60 * 60);
-          const newSubscription = await this.stripe.subscriptions.create({
-            customer: subscription.customer,
-            items: subscription.items.data.map(item => ({
-              price: item.price.id,
-              quantity: item.quantity
-            })),
-            billing_cycle_anchor: newBillingDate,
-            proration_behavior: 'none'
-          });
-          
-          // Only cancel old subscription after new one is successfully created
-          await this.stripe.subscriptions.cancel(updatedCompany.stripeSubscriptionId);
-          
-          // Update the company with the new subscription ID
-          await this.userModel.findByIdAndUpdate(companyId, {
-            stripeSubscriptionId: newSubscription.id
-          }).exec();
-          
-          console.log(`[AdminService] Recreated Stripe subscription with billing cycle 30 days from now for porting company ${companyId}`);
+          const currentTime = Math.floor(Date.now() / 1000);
+
+          // Pull the LIVE subscription state from Stripe — don't trust anything cached,
+          // we need the real current_period_end to guard against shifting backward.
+          const subscription = await this.stripe.subscriptions.retrieve(
+            updatedCompany.stripeSubscriptionId,
+          );
+
+          const currentPeriodEnd = subscription.current_period_end; // seconds, from Stripe
+          const desiredNewBillingDate = currentTime + (30 * 24 * 60 * 60); // 30 days from NOW
+
+          // Safety guard: never move the billing date backward. If the computed date
+          // isn't actually later than where the subscription already sits, skip and log
+          // instead of silently shortening the customer's period (this is what caused
+          // the earlier "moved backward with lower cost" bug).
+          if (desiredNewBillingDate <= currentPeriodEnd) {
+            console.warn(
+              `[AdminService] Skipped billing shift for ${companyId}: computed date ` +
+              `(${desiredNewBillingDate}) is not after current period end ` +
+              `(${currentPeriodEnd}). No action taken.`,
+            );
+          } else {
+            const updatedSubscription = await this.stripe.subscriptions.update(
+              updatedCompany.stripeSubscriptionId,
+              {
+                trial_end: desiredNewBillingDate,
+                proration_behavior: 'none',
+              },
+            );
+
+            // Keep DB in sync with what Stripe actually confirmed, not just what we sent.
+            await this.userModel.findByIdAndUpdate(companyId, {
+              subscriptionExpiresAt: new Date(updatedSubscription.trial_end * 1000),
+            }).exec();
+
+            console.log(
+              `[AdminService] Shifted Stripe billing cycle for porting company ${companyId} to ` +
+              `${new Date(updatedSubscription.trial_end * 1000).toISOString()}`,
+            );
+          }
         } catch (stripeErr: any) {
           console.error(`[AdminService] Failed to shift Stripe billing cycle for ${companyId}: ${stripeErr.message}`);
         }
