@@ -225,9 +225,11 @@ export class AuthService implements OnModuleInit {
       });
 
       // ── Assign companyNo atomically ──────────────────────────────────
+      // Uses an aggregation pipeline so that on first upsert, seq starts at
+      // 10001 ($ifNull treats missing field as 10000, then +1 = 10001).
       const counter = await this.counterModel.findOneAndUpdate(
         { name: 'companyNo' },
-        { $inc: { seq: 1 } },
+        [{ $set: { seq: { $add: [{ $ifNull: ['$seq', 10000] }, 1] } } }],
         { new: true, upsert: true },
       );
       newUser.companyNo = counter.seq;
