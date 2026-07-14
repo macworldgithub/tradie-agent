@@ -201,16 +201,32 @@ export class AdminService {
       const isPorting = await this.numberPortingModel.findOne({ companyId, porting: true }).exec();
       if (isPorting && this.stripe && updatedCompany?.stripeSubscriptionId) {
         try {
-          // Fetch current subscription to get the current billing cycle anchor
+          // To set the billing cycle to exactly 30 days from now, we need to cancel the current subscription
+          // and create a new one with the correct billing_cycle_anchor
           const subscription = await this.stripe.subscriptions.retrieve(updatedCompany.stripeSubscriptionId);
-          const currentAnchor = subscription.current_period_end;
           
-          // Move the billing cycle forward by 30 days from the current anchor
-          await this.stripe.subscriptions.update(updatedCompany.stripeSubscriptionId, {
-            billing_cycle_anchor: currentAnchor + (30 * 24 * 60 * 60),
+          // Cancel current subscription immediately (not at period end)
+          await this.stripe.subscriptions.cancel(updatedCompany.stripeSubscriptionId);
+          
+          // Create new subscription with billing cycle anchored to 30 days from now
+          const newBillingDate = Math.floor(now.getTime() / 1000) + (30 * 24 * 60 * 60);
+          const newSubscription = await this.stripe.subscriptions.create({
+            customer: subscription.customer,
+            items: subscription.items.data.map(item => ({
+              price: item.price.id,
+              quantity: item.quantity
+            })),
+            billing_cycle_anchor: newBillingDate,
+            trial_end: newBillingDate,
             proration_behavior: 'none'
           });
-          console.log(`[AdminService] Shifted Stripe billing cycle forward for porting company ${companyId}`);
+          
+          // Update the company with the new subscription ID
+          await this.userModel.findByIdAndUpdate(companyId, {
+            stripeSubscriptionId: newSubscription.id
+          }).exec();
+          
+          console.log(`[AdminService] Recreated Stripe subscription with billing cycle 30 days from now for porting company ${companyId}`);
         } catch (stripeErr: any) {
           console.error(`[AdminService] Failed to shift Stripe billing cycle for ${companyId}: ${stripeErr.message}`);
         }
