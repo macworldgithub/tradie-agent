@@ -196,16 +196,21 @@ export class AdminService {
         }, { new: true })
         .exec();
 
-      // If this is a porting customer, shift their Stripe billing cycle exactly 30 days from now
+      // If this is a porting customer, shift their Stripe billing cycle forward by 30 days
       // so their payment anniversary matches their true go-live date. Completely ignores Enfonica automated users.
       const isPorting = await this.numberPortingModel.findOne({ companyId, porting: true }).exec();
       if (isPorting && this.stripe && updatedCompany?.stripeSubscriptionId) {
         try {
+          // Fetch current subscription to get the current billing cycle anchor
+          const subscription = await this.stripe.subscriptions.retrieve(updatedCompany.stripeSubscriptionId);
+          const currentAnchor = subscription.current_period_end;
+          
+          // Move the billing cycle forward by 30 days from the current anchor
           await this.stripe.subscriptions.update(updatedCompany.stripeSubscriptionId, {
-            trial_end: Math.floor(now.getTime() / 1000) + (30 * 24 * 60 * 60),
+            billing_cycle_anchor: currentAnchor + (30 * 24 * 60 * 60),
             proration_behavior: 'none'
           });
-          console.log(`[AdminService] Shifted Stripe billing cycle for porting company ${companyId}`);
+          console.log(`[AdminService] Shifted Stripe billing cycle forward for porting company ${companyId}`);
         } catch (stripeErr: any) {
           console.error(`[AdminService] Failed to shift Stripe billing cycle for ${companyId}: ${stripeErr.message}`);
         }
