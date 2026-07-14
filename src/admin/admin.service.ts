@@ -214,7 +214,6 @@ export class AdminService {
               quantity: item.quantity
             })),
             billing_cycle_anchor: newBillingDate,
-            trial_end: newBillingDate,
             proration_behavior: 'none'
           });
           
