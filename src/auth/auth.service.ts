@@ -109,7 +109,7 @@ export class AuthService implements OnModuleInit {
     });
     if (existing) throw new BadRequestException('Email already registered');
 
-    let portingData = null;
+    let portingData: any = null;
     if (dto.porting) {
       if (!file)
         throw new BadRequestException(
@@ -122,19 +122,51 @@ export class AuthService implements OnModuleInit {
         throw new BadRequestException('Supporting document must be a PDF file');
       }
       if (file.size > 5 * 1024 * 1024) {
-        // 5MB limit
         throw new BadRequestException(
           'Supporting document must be less than 5MB',
         );
       }
-      try {
-        portingData =
-          typeof dto.numberPorting === 'string'
-            ? JSON.parse(dto.numberPorting)
-            : dto.numberPorting;
-      } catch (e) {
-        throw new BadRequestException('Invalid numberPorting JSON format');
+
+      // Build portingData from individual top-level form fields.
+      // Also support the legacy numberPorting JSON string for backward compat.
+      if (dto.numberPorting) {
+        try {
+          portingData = JSON.parse(dto.numberPorting);
+        } catch (e) {
+          throw new BadRequestException('Invalid numberPorting JSON format');
+        }
+      } else {
+        // Parse authorisedContact JSON string if provided
+        let authorisedContact: any = undefined;
+        if (dto.authorisedContact) {
+          try {
+            authorisedContact =
+              typeof dto.authorisedContact === 'string'
+                ? JSON.parse(dto.authorisedContact)
+                : dto.authorisedContact;
+          } catch (e) {
+            throw new BadRequestException(
+              'Invalid authorisedContact JSON format',
+            );
+          }
+        }
+
+        portingData = {
+          displayName: dto.displayName,
+          numberToPort: dto.numberToPort,
+          providerName: dto.providerName,
+          accountNumber: dto.accountNumber,
+          entityType: dto.entityType,
+          identificationNumber: dto.identificationNumber,
+          address: dto.address,
+          city: dto.city,
+          state: dto.state,
+          postcode: dto.postcode,
+          country: dto.country,
+          authorisedContact,
+        };
       }
+
       const requiredFields = [
         'displayName',
         'numberToPort',
@@ -150,7 +182,7 @@ export class AuthService implements OnModuleInit {
         'authorisedContact',
       ];
       for (const field of requiredFields) {
-        if (!(portingData as any)[field]) {
+        if (!portingData[field]) {
           throw new BadRequestException(
             `Field ${field} is required when porting is true`,
           );

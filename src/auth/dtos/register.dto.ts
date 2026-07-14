@@ -71,16 +71,75 @@ export class RegisterDto {
   @IsString()
   cityCode: string;
 
+  // ─── Porting flag ────────────────────────────────────────────────────
   @ApiProperty({ example: 'true', required: false })
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   porting?: boolean;
 
-  @ApiProperty({
-    example: '{"displayName": "My Business", "numberToPort": "0412345678"}',
-    required: false,
-  })
+  // ─── Individual porting detail fields (sent as top-level form fields) ─
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  displayName?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  numberToPort?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  providerName?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  accountNumber?: string;
+
+  @ApiProperty({ required: false, enum: ['Company', 'Business'] })
+  @IsOptional()
+  @IsString()
+  entityType?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  identificationNumber?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  postcode?: string;
+
+  /**
+   * authorisedContact sent as a JSON string from multipart/form-data.
+   * e.g. '{"givenName":"Ayla","familyName":"Imran","contactNumber":"0412457843"}'
+   */
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  authorisedContact?: string;
+
+  /** @deprecated Use individual fields above. Kept for backward compatibility. */
+  @ApiProperty({ required: false })
   @IsOptional()
   @IsString()
   numberPorting?: string;
