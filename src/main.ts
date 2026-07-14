@@ -8,13 +8,14 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as express from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   const config = app.get(ConfigService);
   const port = config.get<number>('PORT') ?? 5000;
 
   // Enable CORS
   app.enableCors();
-
 
   // Global validation pipe for DTOs
   app.useGlobalPipes(

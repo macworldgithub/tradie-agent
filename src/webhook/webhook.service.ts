@@ -14,7 +14,7 @@ export class WebhookService {
     private readonly didsService: DidsService,
     private readonly tradiesService: TradiesService,
     private readonly callsService: CallsService,
-  ) { }
+  ) {}
 
   async handleIncoming(
     payload: any,
@@ -61,9 +61,15 @@ export class WebhookService {
       console.log('DID found:', JSON.stringify(did));
 
       const extractId = (val: any): string | undefined =>
-        val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
+        val
+          ? typeof val === 'object' && val._id
+            ? String(val._id)
+            : String(val)
+          : undefined;
 
-      const rawIds = (did.assignedTradieIds || []).map(extractId).filter((id): id is string => !!id);
+      const rawIds = (did.assignedTradieIds || [])
+        .map(extractId)
+        .filter((id): id is string => !!id);
 
       if (rawIds.length === 0) {
         this.logger.error(`No tradie assigned to DID: ${didNumber}`);
@@ -75,12 +81,16 @@ export class WebhookService {
 
       const tradies = await this.tradiesService.findByIds(rawIds);
       const validTradies = tradies.filter(
-        (t) => (t.phoneNumber && t.phoneNumber.startsWith('+')) || t.callReceivedOn === 'mobile'
+        (t) =>
+          (t.phoneNumber && t.phoneNumber.startsWith('+')) ||
+          t.callReceivedOn === 'mobile',
       );
-      const validTradieNumbers = validTradies.map((t) => t.phoneNumber as string);
+      const validTradieNumbers = validTradies.map((t) => t.phoneNumber);
 
       if (validTradieNumbers.length === 0) {
-        this.logger.error(`No valid tradie numbers in E164 format for DID: ${didNumber}`);
+        this.logger.error(
+          `No valid tradie numbers in E164 format for DID: ${didNumber}`,
+        );
         return {
           type: 'voiceml',
           body: `<?xml version="1.0" encoding="UTF-8"?><Response><Say>Sorry, this service is temporarily unavailable.</Say></Response>`,
@@ -90,7 +100,9 @@ export class WebhookService {
       if (rawIds.length === 1) {
         const tradie = tradies[0];
         const tradieNumber = validTradieNumbers[0];
-        const tradieId = Types.ObjectId.isValid(rawIds[0]) ? new Types.ObjectId(rawIds[0]) : undefined;
+        const tradieId = Types.ObjectId.isValid(rawIds[0])
+          ? new Types.ObjectId(rawIds[0])
+          : undefined;
 
         console.log('=== TRADIE FETCHED ===');
         console.log('tradieNumber:', tradieNumber);
@@ -117,12 +129,19 @@ export class WebhookService {
         if (tradie?.callReceivedOn === 'mobile') {
           // mark call as in_progress
           if (enfonicaCallId) {
-            await this.callsService.updateCallStatus(enfonicaCallId, 'initiated');
+            await this.callsService.updateCallStatus(
+              enfonicaCallId,
+              'initiated',
+            );
           }
 
-          const asteriskHost = this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
+          const asteriskHost =
+            this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
           const encodedCallId = encodeURIComponent(enfonicaCallId || '');
-          const safeCallerId = callerNumber && callerNumber.startsWith('+') ? callerNumber : didNumber;
+          const safeCallerId =
+            callerNumber && callerNumber.startsWith('+')
+              ? callerNumber
+              : didNumber;
 
           const voiceML = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -131,7 +150,10 @@ export class WebhookService {
     <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
   </Call>
 </Response>`;
-          console.log('=== VOICEML BEING SENT (MOBILE AI-BRIDGE) ===\n', voiceML);
+          console.log(
+            '=== VOICEML BEING SENT (MOBILE AI-BRIDGE) ===\n',
+            voiceML,
+          );
           return { type: 'voiceml', body: voiceML };
         }
 
@@ -175,7 +197,10 @@ export class WebhookService {
       console.log('=== VOICEML CALLERID ===', didNumber);
 
       const endpointsXml = validTradieNumbers
-        .map((num) => `<Endpoint ScreenAudioUri="tts:Customer call. Press any key to accept.">${num}</Endpoint>`)
+        .map(
+          (num) =>
+            `<Endpoint ScreenAudioUri="tts:Customer call. Press any key to accept.">${num}</Endpoint>`,
+        )
         .join('');
 
       const voiceML = `<?xml version="1.0" encoding="UTF-8"?>

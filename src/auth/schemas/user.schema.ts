@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { Document } from 'mongoose';
+import { Document, Model } from 'mongoose';
 
 export type UserDocument = User & Document;
 
@@ -68,7 +68,6 @@ export class User {
   @Prop()
   cityName?: string;
 
-
   @Prop()
   phoneNumberInstanceName?: string;
 
@@ -80,6 +79,28 @@ export class User {
 
   @Prop({ default: false })
   cancelAtPeriodEnd?: boolean;
+
+  @Prop({ unique: true, sparse: true })
+  companyNo?: number;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+/**
+ * Auto-increment companyNo for new company users.
+ * Starts at 10001 and increments by 1 for each new user.
+ * Admin users (no companyName, seeded directly) are excluded.
+ */
+export function addCompanyNoHook(userSchema: ReturnType<typeof SchemaFactory.createForClass>, counterModel: Model<any>) {
+  userSchema.pre('save', async function () {
+    if (!this.isNew) return; // Only assign on creation
+    if (this.companyNo) return; // Already set (e.g. admin seed)
+
+    const counter = await counterModel.findOneAndUpdate(
+      { name: 'companyNo' },
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true },
+    );
+    this.companyNo = counter.seq;
+  });
+}

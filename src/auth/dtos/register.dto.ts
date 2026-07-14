@@ -77,7 +77,10 @@ export class RegisterDto {
   @IsBoolean()
   porting?: boolean;
 
-  @ApiProperty({ example: '{"displayName": "My Business", "numberToPort": "0412345678"}', required: false })
+  @ApiProperty({
+    example: '{"displayName": "My Business", "numberToPort": "0412345678"}',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   numberPorting?: string;

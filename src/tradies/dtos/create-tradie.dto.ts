@@ -17,10 +17,10 @@ export class CreateTradieDto {
   @IsString()
   email?: string;
 
-  @ApiPropertyOptional({ 
-    example: 'both', 
-    enum: ['email', 'sms', 'both'], 
-    default: 'email' 
+  @ApiPropertyOptional({
+    example: 'both',
+    enum: ['email', 'sms', 'both'],
+    default: 'email',
   })
   @IsOptional()
   @IsEnum(['email', 'sms', 'both'])

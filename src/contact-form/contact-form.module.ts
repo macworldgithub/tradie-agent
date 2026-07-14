@@ -7,7 +7,9 @@ import { CommonModule } from '../common/common.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: ContactForm.name, schema: ContactFormSchema }]),
+    MongooseModule.forFeature([
+      { name: ContactForm.name, schema: ContactFormSchema },
+    ]),
     CommonModule,
   ],
   controllers: [ContactFormController],

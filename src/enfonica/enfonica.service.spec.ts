@@ -62,10 +62,11 @@ describe('EnfonicaService', () => {
     }).compile();
 
     service = module.get<EnfonicaService>(EnfonicaService);
-    
+
     // Grab the mocked instances created inside the service
     mockPhoneNumbersClient = (service as any).phoneNumbersClient;
-    mockPhoneNumberInstancesClient = (service as any).phoneNumberInstancesClient;
+    mockPhoneNumberInstancesClient = (service as any)
+      .phoneNumberInstancesClient;
   });
 
   afterEach(() => {
@@ -79,7 +80,7 @@ describe('EnfonicaService', () => {
       cityCode: 'sydney',
       save: jest.fn(),
     };
-    
+
     mockUserModel.findById.mockResolvedValue(mockUser);
     mockDidModel.exec.mockResolvedValue(null);
     mockTradieModel.findOne.mockResolvedValue({ _id: 'tradie123' });
@@ -89,7 +90,11 @@ describe('EnfonicaService', () => {
     ]);
 
     mockPhoneNumberInstancesClient.createPhoneNumberInstance.mockResolvedValue([
-      { name: 'mock-instance-name', lifecycleState: 'ACTIVE', phoneNumber: { phoneNumber: '+61272000000' } },
+      {
+        name: 'mock-instance-name',
+        lifecycleState: 'ACTIVE',
+        phoneNumber: { phoneNumber: '+61272000000' },
+      },
     ]);
 
     // Mock environment variable
@@ -105,14 +110,18 @@ describe('EnfonicaService', () => {
       prefix: '+61272', // sydney prefix
     });
 
-    expect(mockPhoneNumberInstancesClient.createPhoneNumberInstance).toHaveBeenCalledWith(
+    expect(
+      mockPhoneNumberInstancesClient.createPhoneNumberInstance,
+    ).toHaveBeenCalledWith(
       expect.objectContaining({
         parent: 'projects/project-123',
-      })
+      }),
     );
 
     expect(mockUser.save).toHaveBeenCalled();
-    expect((mockUser as any).phoneNumberInstanceName).toBe('mock-instance-name');
+    expect((mockUser as any).phoneNumberInstanceName).toBe(
+      'mock-instance-name',
+    );
     expect((mockUser as any).phoneNumber).toBe('+61272000000');
     expect(mockAdminService.createDid).toHaveBeenCalledWith('user123', {
       didNumber: '+61272000000',
@@ -127,14 +136,18 @@ describe('EnfonicaService', () => {
       cityCode: 'sydney',
       cityName: 'Sydney',
     };
-    
+
     mockUserModel.findById.mockResolvedValue(mockUser);
     mockDidModel.exec.mockResolvedValue(null);
 
     // Mock no results
     mockPhoneNumbersClient.searchPhoneNumbers.mockResolvedValue([[]]);
 
-    await expect(service.provisionFirstTimeDid('user123')).rejects.toThrow(BadRequestException);
-    await expect(service.provisionFirstTimeDid('user123')).rejects.toThrow('No numbers currently available for Sydney, please try again shortly or pick another city');
+    await expect(service.provisionFirstTimeDid('user123')).rejects.toThrow(
+      BadRequestException,
+    );
+    await expect(service.provisionFirstTimeDid('user123')).rejects.toThrow(
+      'No numbers currently available for Sydney, please try again shortly or pick another city',
+    );
   });
 });

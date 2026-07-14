@@ -67,7 +67,11 @@ export class MailService {
     });
   }
 
-  async sendCallForwardingInstructionsEmail(to: string, didNumber: string, country?: string) {
+  async sendCallForwardingInstructionsEmail(
+    to: string,
+    didNumber: string,
+    country?: string,
+  ) {
     const htmlContent = this.wrapHtml(`
       <div style="line-height: 1.6; padding: 0 20px 20px;">
         <h1 style="color: #0056b3;"> Call Forwarding Setup Instructions</h1>
@@ -88,7 +92,9 @@ export class MailService {
         <p>If you only want forwarding in certain situations, you can enable only the conditions that suit your needs.</p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
 
-        ${country === 'NZ' ? `
+        ${
+          country === 'NZ'
+            ? `
         <h1 style="color: #222;">New Zealand</h1>
         <p><em>> Use your DID number in international format (+64...) where required by your carrier.</em></p>
         
@@ -111,7 +117,8 @@ export class MailService {
         <p><strong>Busy</strong><br><code>*67*${didNumber}#</code></p>
         <p><strong>Unreachable</strong><br><code>*62*${didNumber}#</code></p>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-        ` : `
+        `
+            : `
         <h1 style="color: #222;">Australia</h1>
         
         <h2 style="color: #0056b3;">Telstra</h2>
@@ -138,7 +145,8 @@ export class MailService {
           <strong>Important:</strong> Some prepaid services (including certain Vodafone/TPG, Kogan, amaysim, Felix and other MVNO plans) may not support conditional call forwarding. If you're unable to activate forwarding, please contact your mobile provider.
         </div>
         <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
-        `}
+        `
+        }
 
         <h1 style="color: #222;">Universal GSM Codes</h1>
         <p><strong>Cancel all conditional forwarding</strong><br><code>##004#</code></p>

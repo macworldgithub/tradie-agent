@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Request, UseGuards, Req, Res, BadRequestException, Param, Body, Query, Logger } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Request,
+  UseGuards,
+  Req,
+  Res,
+  BadRequestException,
+  Param,
+  Body,
+  Query,
+  Logger,
+} from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -7,7 +20,7 @@ import { ApiBearerAuth } from '@nestjs/swagger';
 export class PaymentsController {
   private readonly logger = new Logger(PaymentsController.name);
 
-  constructor(private readonly paymentsService: PaymentsService) { }
+  constructor(private readonly paymentsService: PaymentsService) {}
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -33,30 +46,42 @@ export class PaymentsController {
     return this.paymentsService.syncPaymentStatusBySessionId(sessionId);
   }
 
-
-
   @Post('webhook')
   async handleWebhook(@Req() req: any, @Res() res: any) {
-    this.logger.log('========================================================================');
+    this.logger.log(
+      '========================================================================',
+    );
     this.logger.log('🚨 STRIPE WEBHOOK ENDPOINT HIT IN CONTROLLER 🚨');
-    this.logger.log('========================================================================');
+    this.logger.log(
+      '========================================================================',
+    );
 
     const signature = req.headers['stripe-signature'] as string;
-    this.logger.log(`Webhook Signature Length: ${signature?.length || 'MISSING'}`);
+    this.logger.log(
+      `Webhook Signature Length: ${signature?.length || 'MISSING'}`,
+    );
 
     const payload = req.rawBody;
     if (!payload) {
-      this.logger.error('CRITICAL: Raw body is missing in webhook request. Check main.ts configuration.');
-      throw new BadRequestException('Raw body is missing. Ensure rawBody is enabled in main.ts');
+      this.logger.error(
+        'CRITICAL: Raw body is missing in webhook request. Check main.ts configuration.',
+      );
+      throw new BadRequestException(
+        'Raw body is missing. Ensure rawBody is enabled in main.ts',
+      );
     }
 
     try {
       this.logger.log('Passing payload to PaymentsService.handleWebhook...');
       await this.paymentsService.handleWebhook(signature, payload);
-      this.logger.log('✅ Webhook successfully processed by service, sending 200 OK');
+      this.logger.log(
+        '✅ Webhook successfully processed by service, sending 200 OK',
+      );
       res.status(200).send();
     } catch (err) {
-      this.logger.error(`❌ Webhook Error caught in controller: ${err.message}`);
+      this.logger.error(
+        `❌ Webhook Error caught in controller: ${err.message}`,
+      );
       res.status(400).send(`Webhook Error: ${err.message}`);
     }
   }
@@ -80,11 +105,16 @@ export class PaymentsController {
 export class PaymentPagesController {
   private readonly logger = new Logger(PaymentPagesController.name);
 
-  constructor(private readonly paymentsService: PaymentsService) { }
+  constructor(private readonly paymentsService: PaymentsService) {}
 
   @Get('payment-success')
-  async paymentSuccess(@Query('session_id') sessionId: string, @Res() res: any) {
-    this.logger.log(`Handling payment-success redirect. session_id: ${sessionId}`);
+  async paymentSuccess(
+    @Query('session_id') sessionId: string,
+    @Res() res: any,
+  ) {
+    this.logger.log(
+      `Handling payment-success redirect. session_id: ${sessionId}`,
+    );
     if (sessionId) {
       try {
         await this.paymentsService.syncPaymentStatusBySessionId(sessionId);
@@ -145,4 +175,3 @@ export class SubscriptionsController {
     return this.paymentsService.resumeSubscription(req.user?.companyId);
   }
 }
-

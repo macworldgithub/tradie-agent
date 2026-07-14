@@ -22,4 +22,4 @@ import { DidsModule } from '../dids/dids.module';
   providers: [AdminService],
   exports: [AdminService],
 })
-export class AdminModule { }
+export class AdminModule {}

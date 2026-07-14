@@ -55,8 +55,8 @@ interface RealtimeSession {
   // ───────────────────────────────────────────────────────────────────
   outboundFrameQueue: Buffer[];
   outboundPacerTimer: NodeJS.Timeout | null;
-  resampler16to8: SpeexResampler | null;   // ← added these to make voice better
-  resampler8to24: SpeexResampler | null;   // ← added these to make voice better
+  resampler16to8: SpeexResampler | null; // ← added these to make voice better
+  resampler8to24: SpeexResampler | null; // ← added these to make voice better
 }
 
 interface FunctionCallPayload {
@@ -103,7 +103,7 @@ export class VoiceService {
     private readonly callsService: CallsService,
     private readonly ariRtpMediaService: AriRtpMediaService,
     private readonly callEventEmitter: CallEventEmitter,
-  ) { }
+  ) {}
 
   async handleIncomingWebhook(
     payload: Record<string, unknown>,
@@ -150,10 +150,17 @@ export class VoiceService {
     }
 
     const extractId = (val: any): string | undefined =>
-      val ? (typeof val === 'object' && val._id ? String(val._id) : String(val)) : undefined;
+      val
+        ? typeof val === 'object' && val._id
+          ? String(val._id)
+          : String(val)
+        : undefined;
 
-    const resolvedTradieId = extractId(didRecord.assignedTradieId) ||
-      (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0 ? extractId(didRecord.assignedTradieIds[0]) : undefined);
+    const resolvedTradieId =
+      extractId(didRecord.assignedTradieId) ||
+      (didRecord.assignedTradieIds && didRecord.assignedTradieIds.length > 0
+        ? extractId(didRecord.assignedTradieIds[0])
+        : undefined);
 
     if (!resolvedTradieId) {
       this.logger.warn(`No tradie assigned to DID: ${didRaw}`);
@@ -171,7 +178,9 @@ export class VoiceService {
         'We could not connect your call right now. Please try again later.',
       );
     }
-    this.logger.log(`[${callSid}] Tradie name resolved for AI prompt: ${tradie.name}`);
+    this.logger.log(
+      `[${callSid}] Tradie name resolved for AI prompt: ${tradie.name}`,
+    );
 
     this.logger.log(
       `DID lookup succeeded for did=${didRaw} tradie=${tradie.phoneNumber}`,
@@ -377,7 +386,8 @@ export class VoiceService {
     let resolvedEnfonicaCallId = enfonicaCallId;
     if (!resolvedEnfonicaCallId && callerNumber) {
       try {
-        const matchingLog = await this.callsService.findLatestByCaller(callerNumber);
+        const matchingLog =
+          await this.callsService.findLatestByCaller(callerNumber);
         if (matchingLog) {
           resolvedEnfonicaCallId = matchingLog.enfonicaCallId ?? null;
           this.logger.log(
@@ -385,41 +395,59 @@ export class VoiceService {
           );
         }
       } catch (err) {
-        this.logger.error(`Failed to lookup matching CallLog by caller number: ${err.message}`);
+        this.logger.error(
+          `Failed to lookup matching CallLog by caller number: ${err.message}`,
+        );
       }
     }
 
     let tradieName: string | null = null;
     try {
       if (resolvedEnfonicaCallId) {
-        const callLog = await this.callsService.findByEnfonicaCallId(resolvedEnfonicaCallId);
-        this.logger.log(`[${callId}] CallLog found: ${callLog ? 'yes' : 'null'}`);
+        const callLog = await this.callsService.findByEnfonicaCallId(
+          resolvedEnfonicaCallId,
+        );
+        this.logger.log(
+          `[${callId}] CallLog found: ${callLog ? 'yes' : 'null'}`,
+        );
 
-        const tradieId = callLog?.tradieId
-          || (callLog?.tradieIds?.length ? callLog.tradieIds[0] : null);
+        const tradieId =
+          callLog?.tradieId ||
+          (callLog?.tradieIds?.length ? callLog.tradieIds[0] : null);
 
         this.logger.log(`[${callId}] tradieId from CallLog: ${tradieId}`);
 
         if (tradieId) {
-          const tradieObj = await this.tradiesService.findById(String(tradieId));
+          const tradieObj = await this.tradiesService.findById(
+            String(tradieId),
+          );
           if (tradieObj?.name) {
             tradieName = tradieObj.name;
           }
         }
       }
     } catch (err) {
-      this.logger.error(`[${callId}] Failed to fetch tradie name: ${err.message}`);
+      this.logger.error(
+        `[${callId}] Failed to fetch tradie name: ${err.message}`,
+      );
     }
 
-    this.logger.log(`[${callId}] Tradie name resolved for AI prompt: ${tradieName}`);
+    this.logger.log(
+      `[${callId}] Tradie name resolved for AI prompt: ${tradieName}`,
+    );
 
     try {
-      await this.createRealtimeSession(callId, async (event) => {
-        this.logger.log(`[${callId}] Voice event: ${event.type}`);
-        if (event.type === 'audio-delta') {
-          this.sendAudioToAri(callId, event.delta);
-        }
-      }, callerNumber, tradieName);
+      await this.createRealtimeSession(
+        callId,
+        async (event) => {
+          this.logger.log(`[${callId}] Voice event: ${event.type}`);
+          if (event.type === 'audio-delta') {
+            this.sendAudioToAri(callId, event.delta);
+          }
+        },
+        callerNumber,
+        tradieName,
+      );
 
       const session = this.sessions.get(callId);
       if (session) {
@@ -503,20 +531,29 @@ export class VoiceService {
   //   }
   // }
 
-  private async sendAudioToAri(callId: string, audioDelta: string): Promise<void> {
+  private async sendAudioToAri(
+    callId: string,
+    audioDelta: string,
+  ): Promise<void> {
     try {
       const session = this.sessions.get(callId);
       if (!session) {
-        this.logger.warn(`[${callId}] sendAudioToAri: no session — dropping audio`);
+        this.logger.warn(
+          `[${callId}] sendAudioToAri: no session — dropping audio`,
+        );
         return;
       }
 
       const pcm16kBuffer = Buffer.from(audioDelta, 'base64');
-      this.logger.debug(`[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`);
+      this.logger.debug(
+        `[${callId}] sendAudioToAri: received ${pcm16kBuffer.length} bytes from ElevenLabs`,
+      );
 
-      const pcm8kBuffer = await this.downsample16kTo8k(callId, pcm16kBuffer);  // ← NOW ASYNC + sessionId
+      const pcm8kBuffer = await this.downsample16kTo8k(callId, pcm16kBuffer); // ← NOW ASYNC + sessionId
       const ulawBuffer = this.convertPcm16ToUlaw(pcm8kBuffer);
-      this.logger.debug(`[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, queueing`);
+      this.logger.debug(
+        `[${callId}] sendAudioToAri: converted to ${ulawBuffer.length} ulaw bytes, queueing`,
+      );
 
       let frameCount = 0;
       for (let i = 0; i < ulawBuffer.length; i += ULAW_FRAME_BYTES) {
@@ -531,7 +568,10 @@ export class VoiceService {
 
       this.startOutboundPacer(callId);
     } catch (err) {
-      this.logger.error(`[${callId}] sendAudioToAri FAILED: ${(err as Error).message}`, err);
+      this.logger.error(
+        `[${callId}] sendAudioToAri FAILED: ${(err as Error).message}`,
+        err,
+      );
     }
   }
 
@@ -615,7 +655,10 @@ export class VoiceService {
   //   }
   //   return output;
   // }
-  private async downsample16kTo8k(sessionId: string, input: Buffer): Promise<Buffer> {
+  private async downsample16kTo8k(
+    sessionId: string,
+    input: Buffer,
+  ): Promise<Buffer> {
     const session = this.sessions.get(sessionId);
     if (!session) return Buffer.alloc(0);
 
@@ -662,9 +705,13 @@ export class VoiceService {
     if (sample > CLIP) sample = CLIP;
     sample += BIAS;
     let exponent = 7;
-    for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; exponent--, expMask >>= 1) { }
+    for (
+      let expMask = 0x4000;
+      (sample & expMask) === 0 && exponent > 0;
+      exponent--, expMask >>= 1
+    ) {}
     const mantissa = (sample >> (exponent + 3)) & 0x0f;
-    return (~(sign | (exponent << 4) | mantissa)) & 0xff;
+    return ~(sign | (exponent << 4) | mantissa) & 0xff;
   }
 
   async createRealtimeSession(
@@ -803,13 +850,17 @@ export class VoiceService {
   //   }
   // }
 
-  async sendInboundAudio(sessionId: string, ulawPayload: Buffer): Promise<void> {
+  async sendInboundAudio(
+    sessionId: string,
+    ulawPayload: Buffer,
+  ): Promise<void> {
     const session = this.sessions.get(sessionId);
-    if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+    if (!session || !session.ws || session.ws.readyState !== WebSocket.OPEN)
+      return;
 
     try {
       const pcm8k = this.convertUlawToSlin(ulawPayload);
-      const pcm24k = await this.upsample8kTo24k(sessionId, pcm8k);  // ← NOW ASYNC + sessionId
+      const pcm24k = await this.upsample8kTo24k(sessionId, pcm8k); // ← NOW ASYNC + sessionId
       session.ws.send(
         JSON.stringify({
           type: 'input_audio_buffer.append',
@@ -817,7 +868,9 @@ export class VoiceService {
         }),
       );
     } catch (err) {
-      this.logger.error(`[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`);
+      this.logger.error(
+        `[${sessionId}] sendInboundAudio failed: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -847,7 +900,7 @@ export class VoiceService {
     const exponent = (ulaw >> 4) & 0x07;
     const mantissa = ulaw & 0x0f;
     let sample = ((mantissa << 3) + 0x84) << exponent;
-    sample -= 0x84;  // ← the missing step
+    sample -= 0x84; // ← the missing step
     return sign !== 0 ? -sample : sample;
   }
 
@@ -864,7 +917,10 @@ export class VoiceService {
   //   }
   //   return output;
   // }
-  private async upsample8kTo24k(sessionId: string, input: Buffer): Promise<Buffer> {
+  private async upsample8kTo24k(
+    sessionId: string,
+    input: Buffer,
+  ): Promise<Buffer> {
     const session = this.sessions.get(sessionId);
     if (!session) return Buffer.alloc(0);
 
@@ -949,9 +1005,9 @@ export class VoiceService {
           const msgContextId = msg.contextId || msg.context_id;
           this.logger.debug(
             `[${sessionId}] EL chunk received: contextId=${msgContextId} ` +
-            `currentCtx=${session.currentContextId} ` +
-            `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
-            `audioBytes=${Buffer.from(msg.audio, 'base64').length}`,
+              `currentCtx=${session.currentContextId} ` +
+              `isFinal=${msg.isFinal ?? msg.is_final ?? false} ` +
+              `audioBytes=${Buffer.from(msg.audio, 'base64').length}`,
           );
           if (
             session.currentContextId &&
@@ -977,9 +1033,9 @@ export class VoiceService {
               : 'N/A';
             this.logger.log(
               `[${sessionId}] Turn Latency Breakdown:\n` +
-              `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
-              `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
-              `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`,
+                `  - User stopped speaking -> First Audio Chunk: ${fromSpeechStopped}\n` +
+                `  - OpenAI Response Created -> First Audio Chunk: ${fromResponseCreated}\n` +
+                `  - OpenAI Text Generated -> ElevenLabs Audio Received: ${fromFirstTextDelta}`,
             );
           }
 
@@ -998,7 +1054,7 @@ export class VoiceService {
             const responseCreatedAfterGreetingMs =
               session.firstResponseCreatedAtMs && session.greetingTriggeredAtMs
                 ? session.firstResponseCreatedAtMs -
-                session.greetingTriggeredAtMs
+                  session.greetingTriggeredAtMs
                 : -1;
             const firstAudioAfterResponseCreatedMs =
               session.firstResponseCreatedAtMs
@@ -1006,13 +1062,13 @@ export class VoiceService {
                 : -1;
             this.logger.log(
               `[${sessionId}] Timing: first audio delta at ${firstAudioAtMs - session.sessionStartedAtMs}ms ` +
-              `(openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, ` +
-              `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
+                `(openai=${openAiMs}ms, elevenlabs=${elevenLabsMs}ms, greeting=${greetingMs}ms, ` +
+                `response_created_after_greeting=${responseCreatedAfterGreetingMs}ms, audio_after_response_created=${firstAudioAfterResponseCreatedMs}ms)`,
             );
           }
           session.onEvent({ type: 'audio-delta', delta: msg.audio });
         }
-      } catch (err) { }
+      } catch (err) {}
     });
 
     elWs.on('error', (err) => {
@@ -1044,7 +1100,7 @@ export class VoiceService {
         const payload: any = { text: ' ' };
         if (s.currentContextId) payload.context_id = s.currentContextId;
         s.elevenLabsWs.send(JSON.stringify(payload));
-      } catch { }
+      } catch {}
     }, 10000);
 
     session.elevenLabsWs = elWs;
@@ -1108,9 +1164,9 @@ export class VoiceService {
     ) {
       this.logger.warn(
         `[${sessionId}] sendTextToElevenLabs DROPPED: ` +
-        `ready=${session?.elevenLabsReady} ` +
-        `wsState=${session?.elevenLabsWs?.readyState} ` +
-        `text="${text?.substring(0, 30)}"`,
+          `ready=${session?.elevenLabsReady} ` +
+          `wsState=${session?.elevenLabsWs?.readyState} ` +
+          `text="${text?.substring(0, 30)}"`,
       );
       return;
     }
@@ -1142,7 +1198,7 @@ export class VoiceService {
             flush: true,
           }),
         );
-      } catch { }
+      } catch {}
     }
   }
 
@@ -1212,7 +1268,7 @@ export class VoiceService {
                 close_context: true,
               }),
             );
-          } catch { }
+          } catch {}
         }
 
         session.currentContextId = `ctx_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
@@ -1238,9 +1294,9 @@ export class VoiceService {
       case 'response.text.delta':
         this.logger.debug(
           `[${sessionId}] Text delta: elevenLabsReady=${session.elevenLabsReady} ` +
-          `wsState=${session.elevenLabsWs?.readyState} ` +
-          `bufferSize=${session.textBuffer.length} ` +
-          `text="${event.delta?.substring(0, 20)}..."`,
+            `wsState=${session.elevenLabsWs?.readyState} ` +
+            `bufferSize=${session.textBuffer.length} ` +
+            `text="${event.delta?.substring(0, 20)}..."`,
         );
         if (
           !session.elevenLabsReady &&
@@ -1440,7 +1496,10 @@ export class VoiceService {
     }
   }
 
-  private getSystemPrompt(callerNumber?: string | null, tradieName?: string | null): string {
+  private getSystemPrompt(
+    callerNumber?: string | null,
+    tradieName?: string | null,
+  ): string {
     const caller_phone_number = callerNumber || 'unknown';
     return `
 =============================================================

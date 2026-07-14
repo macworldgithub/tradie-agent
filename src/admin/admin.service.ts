@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ConfigService } from '@nestjs/config';
@@ -19,7 +23,7 @@ export class AdminService {
     private configService: ConfigService,
     private tradiesService: TradiesService,
     private didsService: DidsService,
-  ) { }
+  ) {}
 
   private daysSince(date?: Date): number {
     if (!date) return 30; // 30 minus 30 = 0 days remaining if no date
@@ -29,33 +33,53 @@ export class AdminService {
 
   async getCompanies() {
     const adminEmail = this.configService.get<string>('SUPERR_ADMIN_EMAIL');
-    const companies = await this.userModel.find({ email: { $ne: adminEmail } }).lean().exec();
+    const companies = await this.userModel
+      .find({ email: { $ne: adminEmail } })
+      .lean()
+      .exec();
 
-    const results = await Promise.all(companies.map(async (company) => {
-      const did = await this.didModel.findOne({ companyId: String(company._id) }).lean().exec();
-      const tradieCount = await this.tradieModel.countDocuments({ companyId: String(company._id) }).exec();
+    const results = await Promise.all(
+      companies.map(async (company) => {
+        const did = await this.didModel
+          .findOne({ companyId: String(company._id) })
+          .lean()
+          .exec();
+        const tradieCount = await this.tradieModel
+          .countDocuments({ companyId: String(company._id) })
+          .exec();
 
-      // Use subscriptionExpiresAt (same field the cron checks) so daysRemaining is consistent
-      let daysRemaining = 0;
-      if ((company as any).subscriptionExpiresAt) {
-        const msRemaining = new Date((company as any).subscriptionExpiresAt).getTime() - Date.now();
-        daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 3600 * 24)));
-      } else if (did?.subscriptionStartDate) {
-        // Fallback for legacy records that predate subscriptionExpiresAt
-        daysRemaining = Math.max(0, 30 - this.daysSince(did.subscriptionStartDate));
-      }
+        // Use subscriptionExpiresAt (same field the cron checks) so daysRemaining is consistent
+        let daysRemaining = 0;
+        if ((company as any).subscriptionExpiresAt) {
+          const msRemaining =
+            new Date((company as any).subscriptionExpiresAt).getTime() -
+            Date.now();
+          daysRemaining = Math.max(
+            0,
+            Math.ceil(msRemaining / (1000 * 3600 * 24)),
+          );
+        } else if (did?.subscriptionStartDate) {
+          // Fallback for legacy records that predate subscriptionExpiresAt
+          daysRemaining = Math.max(
+            0,
+            30 - this.daysSince(did.subscriptionStartDate),
+          );
+        }
 
-      return {
-        companyId: company._id,
-        companyName: company.companyName,
-        email: company.email,
-        hasPaid: company.hasPaid,
-        daysRemaining,
-        didNumber: did?.didNumber || null,
-        isActive: did ? (did.assignedTradieIds && did.assignedTradieIds.length > 0) : false,
-        tradieCount
-      };
-    }));
+        return {
+          companyId: company._id,
+          companyName: company.companyName,
+          email: company.email,
+          hasPaid: company.hasPaid,
+          daysRemaining,
+          didNumber: did?.didNumber || null,
+          isActive: did
+            ? did.assignedTradieIds && did.assignedTradieIds.length > 0
+            : false,
+          tradieCount,
+        };
+      }),
+    );
 
     return results;
   }
@@ -64,35 +88,41 @@ export class AdminService {
     const company = await this.userModel.findById(companyId).lean().exec();
     if (!company) throw new NotFoundException('Company not found');
 
-    let did = await this.didModel.findOne({ companyId }).exec();
+    const did = await this.didModel.findOne({ companyId }).exec();
     const tradies = await this.tradieModel.find({ companyId }).lean().exec();
 
     // Diagnostic: log if ghost IDs are detected (do NOT write on a GET — data mutations on reads cause silent data loss)
     if (did && did.assignedTradieIds && did.assignedTradieIds.length > 0) {
       const existingIds = did.assignedTradieIds.map(String);
-      const validTradieIds = tradies.map(t => String(t._id));
-      const ghostIds = existingIds.filter(id => !validTradieIds.includes(id));
+      const validTradieIds = tradies.map((t) => String(t._id));
+      const ghostIds = existingIds.filter((id) => !validTradieIds.includes(id));
       if (ghostIds.length > 0) {
         // Ghost detected — log only, do not mutate. Use the admin unmap/remap flow to clean up.
-        console.warn(`[getCompanyDetails] Ghost tradie IDs detected in DID ${did._id}: ${ghostIds.join(', ')}`);
+        console.warn(
+          `[getCompanyDetails] Ghost tradie IDs detected in DID ${did._id}: ${ghostIds.join(', ')}`,
+        );
       }
     }
 
     // Use subscriptionExpiresAt (same field the cron checks) so daysRemaining is consistent
     let daysRemaining = 0;
     if ((company as any).subscriptionExpiresAt) {
-      const msRemaining = new Date((company as any).subscriptionExpiresAt).getTime() - Date.now();
+      const msRemaining =
+        new Date((company as any).subscriptionExpiresAt).getTime() - Date.now();
       daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 3600 * 24)));
     } else if (did?.subscriptionStartDate) {
       // Fallback for legacy records that predate subscriptionExpiresAt
-      daysRemaining = Math.max(0, 30 - this.daysSince(did.subscriptionStartDate));
+      daysRemaining = Math.max(
+        0,
+        30 - this.daysSince(did.subscriptionStartDate),
+      );
     }
 
     return {
       company,
       did: did ? did.toObject() : null,
       tradies,
-      daysRemaining
+      daysRemaining,
     };
   }
 
@@ -118,7 +148,11 @@ export class AdminService {
 
     if (!existing) {
       // No DID yet — validate then create fresh
-      await this.didsService.validateTradieAssignments(undefined, [tradieId], companyId);
+      await this.didsService.validateTradieAssignments(
+        undefined,
+        [tradieId],
+        companyId,
+      );
 
       const did = new this.didModel({
         didNumber,
@@ -131,28 +165,42 @@ export class AdminService {
       try {
         await did.save();
       } catch (e) {
-        if (e.code === 11000) throw new BadRequestException('DID number already in use.');
+        if (e.code === 11000)
+          throw new BadRequestException('DID number already in use.');
         throw e;
       }
 
       await this.tradiesService.updateIsMapped(tradieId, true);
       // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
-      await this.userModel.findByIdAndUpdate(companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();
+      await this.userModel
+        .findByIdAndUpdate(companyId, {
+          hasPaid: true,
+          lastPaymentDate: new Date(),
+        })
+        .exec();
       return did;
     }
 
     // DID already exists — self-heal by removing any ghost IDs, then append new tradieId
     const existingIds = (existing.assignedTradieIds || []).map(String);
-    
+
     // Find which of those IDs actually still exist in the DB
-    const validExistingTradies = await this.tradieModel.find({ _id: { $in: existingIds } }).select('_id').lean().exec();
-    const validExistingIds = validExistingTradies.map(t => String(t._id));
+    const validExistingTradies = await this.tradieModel
+      .find({ _id: { $in: existingIds } })
+      .select('_id')
+      .lean()
+      .exec();
+    const validExistingIds = validExistingTradies.map((t) => String(t._id));
 
     const combined = validExistingIds.includes(tradieId)
       ? validExistingIds
       : [...validExistingIds, tradieId];
 
-    await this.didsService.validateTradieAssignments(undefined, combined, companyId);
+    await this.didsService.validateTradieAssignments(
+      undefined,
+      combined,
+      companyId,
+    );
 
     const setQuery: any = { assignedTradieIds: combined };
     if (didNumber && didNumber !== existing.didNumber) {
@@ -172,13 +220,19 @@ export class AdminService {
         )
         .exec();
     } catch (e) {
-      if (e.code === 11000) throw new BadRequestException('DID number already in use.');
+      if (e.code === 11000)
+        throw new BadRequestException('DID number already in use.');
       throw e;
     }
 
     await this.tradiesService.updateIsMapped(tradieId, true);
     // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
-    await this.userModel.findByIdAndUpdate(companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();
+    await this.userModel
+      .findByIdAndUpdate(companyId, {
+        hasPaid: true,
+        lastPaymentDate: new Date(),
+      })
+      .exec();
     return updated;
   }
 
@@ -187,15 +241,17 @@ export class AdminService {
     if (!did) throw new NotFoundException('DID not found');
 
     const prevTradies = did.assignedTradieIds || [];
-    
+
     // Store them in unassigned array for later restoration
     did.unassignedTradieIds = [...prevTradies];
     did.assignedTradieIds = [];
     await did.save();
 
-    await this.tradiesService.updateManyIsMapped(prevTradies as string[], false);
+    await this.tradiesService.updateManyIsMapped(prevTradies, false);
 
-    await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: false }).exec();
+    await this.userModel
+      .findByIdAndUpdate(did.companyId, { hasPaid: false })
+      .exec();
     return did;
   }
 
@@ -207,11 +263,19 @@ export class AdminService {
     const unassignedIds = did.unassignedTradieIds || [];
 
     // Self-heal: ensure none of them were deleted while the company was unmapped
-    const validTradies = await this.tradieModel.find({ _id: { $in: unassignedIds } }).select('_id').lean().exec();
-    const validIds = validTradies.map(t => String(t._id));
+    const validTradies = await this.tradieModel
+      .find({ _id: { $in: unassignedIds } })
+      .select('_id')
+      .lean()
+      .exec();
+    const validIds = validTradies.map((t) => String(t._id));
 
     // Validate the remaining valid tradies (Mobile checks, etc)
-    await this.didsService.validateTradieAssignments(undefined, validIds, did.companyId);
+    await this.didsService.validateTradieAssignments(
+      undefined,
+      validIds,
+      did.companyId,
+    );
 
     did.assignedTradieIds = validIds;
     did.unassignedTradieIds = [];
@@ -221,7 +285,12 @@ export class AdminService {
     await this.tradiesService.updateManyIsMapped(validIds, true);
 
     // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
-    await this.userModel.findByIdAndUpdate(did.companyId, { hasPaid: true, lastPaymentDate: new Date() }).exec();
+    await this.userModel
+      .findByIdAndUpdate(did.companyId, {
+        hasPaid: true,
+        lastPaymentDate: new Date(),
+      })
+      .exec();
 
     return did;
   }
@@ -232,7 +301,9 @@ export class AdminService {
 
     // Keep subscriptionStartDate in sync (legacy / display use)
     const currentStart = did.subscriptionStartDate || new Date();
-    did.subscriptionStartDate = new Date(new Date(currentStart).getTime() + (30 * 24 * 60 * 60 * 1000));
+    did.subscriptionStartDate = new Date(
+      new Date(currentStart).getTime() + 30 * 24 * 60 * 60 * 1000,
+    );
     await did.save();
 
     // Extend subscriptionExpiresAt on the user — this is the field the cron checks.
@@ -240,20 +311,27 @@ export class AdminService {
     const user = await this.userModel.findById(did.companyId).exec();
     if (user) {
       const now = new Date();
-      const currentExpiry = user.subscriptionExpiresAt ? new Date(user.subscriptionExpiresAt) : now;
+      const currentExpiry = user.subscriptionExpiresAt
+        ? new Date(user.subscriptionExpiresAt)
+        : now;
       const baseDate = currentExpiry > now ? currentExpiry : now;
-      user.subscriptionExpiresAt = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+      user.subscriptionExpiresAt = new Date(
+        baseDate.getTime() + 30 * 24 * 60 * 60 * 1000,
+      );
       user.hasPaid = true;
       user.lastPaymentDate = new Date();
       await user.save();
 
       const msRemaining = user.subscriptionExpiresAt.getTime() - now.getTime();
-      const daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 3600 * 24)));
+      const daysRemaining = Math.max(
+        0,
+        Math.ceil(msRemaining / (1000 * 3600 * 24)),
+      );
 
       return {
         success: true,
         newSubscriptionExpiresAt: user.subscriptionExpiresAt,
-        daysRemaining
+        daysRemaining,
       };
     }
 

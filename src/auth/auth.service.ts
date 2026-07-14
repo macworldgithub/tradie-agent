@@ -19,9 +19,15 @@ import { RegisterDto } from './dtos/register.dto';
 import { LoginDto } from './dtos/login.dto';
 import { MailService } from '../common/mail/mail.service';
 import { generateToken } from './utils/token.util';
-import { getCityNameForCode, InvalidCityError } from '../config/au-city-prefixes';
+import {
+  getCityNameForCode,
+  InvalidCityError,
+} from '../config/au-city-prefixes';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
-import { NumberPorting, NumberPortingDocument } from '../number-porting/schemas/number-porting.schema';
+import {
+  NumberPorting,
+  NumberPortingDocument,
+} from '../number-porting/schemas/number-porting.schema';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -30,11 +36,12 @@ export class AuthService implements OnModuleInit {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
-    @InjectModel(NumberPorting.name) private numberPortingModel: Model<NumberPortingDocument>,
+    @InjectModel(NumberPorting.name)
+    private numberPortingModel: Model<NumberPortingDocument>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
-  ) { }
+  ) {}
 
   async onModuleInit() {
     await this.seedAdminUser();
@@ -44,11 +51,17 @@ export class AuthService implements OnModuleInit {
     const adminEmail = this.configService.get<string>('SUPERR_ADMIN_EMAIL');
     if (!adminEmail) return;
 
-    const adminName = this.configService.get<string>('SUPERR_ADMIN_NAME') || 'Lee Atkinson';
+    const adminName =
+      this.configService.get<string>('SUPERR_ADMIN_NAME') || 'Lee Atkinson';
 
-    const existingAdmin = await this.userModel.findOne({ email: adminEmail.toLowerCase() });
+    const existingAdmin = await this.userModel.findOne({
+      email: adminEmail.toLowerCase(),
+    });
     if (existingAdmin) {
-      if (existingAdmin.customerName !== adminName || existingAdmin.companyName) {
+      if (
+        existingAdmin.customerName !== adminName ||
+        existingAdmin.companyName
+      ) {
         existingAdmin.customerName = adminName;
         existingAdmin.companyName = undefined;
         await existingAdmin.save();
@@ -59,7 +72,8 @@ export class AuthService implements OnModuleInit {
 
     this.logger.log(`Seeding initial super admin: ${adminEmail}`);
 
-    const adminPassword = this.configService.get<string>('INITIAL_ADMIN_PASSWORD') || '12344321';
+    const adminPassword =
+      this.configService.get<string>('INITIAL_ADMIN_PASSWORD') || '12344321';
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
     const newAdmin = new this.userModel({
@@ -78,7 +92,10 @@ export class AuthService implements OnModuleInit {
   }
 
   private async signToken(userId: string, email: string) {
-    const role = email === this.configService.get<string>('SUPERR_ADMIN_EMAIL') ? 'admin' : 'company';
+    const role =
+      email === this.configService.get<string>('SUPERR_ADMIN_EMAIL')
+        ? 'admin'
+        : 'company';
     const payload = { sub: userId, companyId: userId, email, role };
     return this.jwtService.signAsync(payload, {
       secret: this.configService.get('JWT_ACCESS_SECRET'),
@@ -94,29 +111,57 @@ export class AuthService implements OnModuleInit {
 
     let portingData = null;
     if (dto.porting) {
-      if (!file) throw new BadRequestException('Supporting document is required for number porting');
-      if (file.mimetype !== 'application/pdf' || !file.originalname.toLowerCase().endsWith('.pdf')) {
+      if (!file)
+        throw new BadRequestException(
+          'Supporting document is required for number porting',
+        );
+      if (
+        file.mimetype !== 'application/pdf' ||
+        !file.originalname.toLowerCase().endsWith('.pdf')
+      ) {
         throw new BadRequestException('Supporting document must be a PDF file');
       }
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        throw new BadRequestException('Supporting document must be less than 5MB');
+      if (file.size > 5 * 1024 * 1024) {
+        // 5MB limit
+        throw new BadRequestException(
+          'Supporting document must be less than 5MB',
+        );
       }
       try {
-        portingData = typeof dto.numberPorting === 'string' ? JSON.parse(dto.numberPorting) : dto.numberPorting;
+        portingData =
+          typeof dto.numberPorting === 'string'
+            ? JSON.parse(dto.numberPorting)
+            : dto.numberPorting;
       } catch (e) {
         throw new BadRequestException('Invalid numberPorting JSON format');
       }
-      const requiredFields = ['displayName', 'numberToPort', 'providerName', 'accountNumber', 'entityType', 'identificationNumber', 'address', 'city', 'state', 'postcode', 'country', 'authorisedContact'];
+      const requiredFields = [
+        'displayName',
+        'numberToPort',
+        'providerName',
+        'accountNumber',
+        'entityType',
+        'identificationNumber',
+        'address',
+        'city',
+        'state',
+        'postcode',
+        'country',
+        'authorisedContact',
+      ];
       for (const field of requiredFields) {
         if (!(portingData as any)[field]) {
-          throw new BadRequestException(`Field ${field} is required when porting is true`);
+          throw new BadRequestException(
+            `Field ${field} is required when porting is true`,
+          );
         }
       }
     }
 
     let cityName: string | undefined;
     if (dto.country === 'AU') {
-      if (!dto.cityCode) throw new BadRequestException('City code is required for Australia');
+      if (!dto.cityCode)
+        throw new BadRequestException('City code is required for Australia');
       try {
         cityName = getCityNameForCode(dto.cityCode);
       } catch (error) {
@@ -131,7 +176,7 @@ export class AuthService implements OnModuleInit {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const session = await this.userModel.db.startSession();
-    
+
     let savedFilePath: string | null = null;
     let newUser;
     try {
@@ -160,17 +205,24 @@ export class AuthService implements OnModuleInit {
 
       if (dto.porting) {
         const companyIdStr = newUser._id.toString();
-        const uploadDir = path.join(process.cwd(), 'uploads', 'number-porting', companyIdStr);
+        const uploadDir = path.join(
+          process.cwd(),
+          'uploads',
+          'number-porting',
+          companyIdStr,
+        );
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
-        
+
         // Sanitize filename — file! is safe here: we throw above if file is missing when porting=true
-        const safeOriginalName = path.basename(file!.originalname).replace(/[^a-zA-Z0-9.\-_]/g, '');
+        const safeOriginalName = path
+          .basename(file!.originalname)
+          .replace(/[^a-zA-Z0-9.\-_]/g, '');
         const ext = path.extname(safeOriginalName).toLowerCase();
         const uniqueFilename = `${uuidv4()}${ext}`;
         savedFilePath = path.join(uploadDir, uniqueFilename);
-        
+
         // Save file securely
         fs.writeFileSync(savedFilePath, file!.buffer, { mode: 0o600 });
 
@@ -196,7 +248,10 @@ export class AuthService implements OnModuleInit {
         try {
           fs.unlinkSync(savedFilePath);
         } catch (e) {
-          this.logger.error(`Failed to delete file during rollback: ${savedFilePath}`, e);
+          this.logger.error(
+            `Failed to delete file during rollback: ${savedFilePath}`,
+            e,
+          );
         }
       }
       throw error;
@@ -227,12 +282,16 @@ export class AuthService implements OnModuleInit {
     }
 
     const token = await this.signToken(user._id.toString(), user.email);
-    const role = user.email === this.configService.get<string>('SUPERR_ADMIN_EMAIL') ? 'admin' : 'company';
+    const role =
+      user.email === this.configService.get<string>('SUPERR_ADMIN_EMAIL')
+        ? 'admin'
+        : 'company';
 
     const userPayload: any = {
       id: user._id,
       email: user.email,
       customerName: user.customerName,
+      companyNo: user.companyNo,
     };
 
     if (role !== 'admin') {
@@ -298,6 +357,7 @@ export class AuthService implements OnModuleInit {
     return {
       customerName: user.customerName,
       companyName: user.companyName,
+      companyNo: user.companyNo,
       acn: user.acn,
       email: user.email,
     };

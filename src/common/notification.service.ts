@@ -17,7 +17,12 @@ export class NotificationService {
     },
   });
 
-  async sendEmail(to: string, subject: string, body: string, cc?: string[]): Promise<void> {
+  async sendEmail(
+    to: string,
+    subject: string,
+    body: string,
+    cc?: string[],
+  ): Promise<void> {
     await this.transporter.sendMail({
       from: process.env.SMTP_USER,
       to,
@@ -32,30 +37,37 @@ export class NotificationService {
     const password = this.configService.get<string>('MOBILEMESSAGE_PASSWORD');
     const from = this.configService.get<string>('MOBILEMESSAGE_FROM');
 
-    const credentials = Buffer.from(`${username}:${password}`).toString('base64');
+    const credentials = Buffer.from(`${username}:${password}`).toString(
+      'base64',
+    );
 
     try {
-      const response = await fetch('https://api.mobilemessage.com.au/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Basic ${credentials}`,
-          'Content-Type': 'application/json',
+      const response = await fetch(
+        'https://api.mobilemessage.com.au/v1/messages',
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${credentials}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            enable_unicode: true,
+            messages: [
+              {
+                to,
+                message: body,
+                sender: from,
+              },
+            ],
+          }),
         },
-        body: JSON.stringify({
-          enable_unicode: true,
-          messages: [
-            {
-              to,
-              message: body,
-              sender: from,
-            }
-          ]
-        })
-      });
+      );
 
       const result = await response.json();
       if (result.results?.[0]?.status !== 'success') {
-        this.logger.error(`MobileMessage SMS failed: ${JSON.stringify(result)}`);
+        this.logger.error(
+          `MobileMessage SMS failed: ${JSON.stringify(result)}`,
+        );
       } else {
         this.logger.log(`SMS sent successfully to ${to}`);
       }

@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, BadRequestException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Tradie, TradieDocument } from './schemas/tradie.schema';
@@ -27,7 +31,10 @@ export class TradiesService {
   }
 
   async findByIds(ids: string[]): Promise<Tradie[]> {
-    return this.tradieModel.find({ _id: { $in: ids } }).lean().exec();
+    return this.tradieModel
+      .find({ _id: { $in: ids } })
+      .lean()
+      .exec();
   }
 
   async findByPhone(phoneNumber: string): Promise<Tradie | null> {
@@ -38,10 +45,7 @@ export class TradiesService {
     if (dto.callReceivedOn === 'mobile') {
       const assignedDids = await this.didModel
         .find({
-          $or: [
-            { assignedTradieId: id },
-            { assignedTradieIds: id },
-          ],
+          $or: [{ assignedTradieId: id }, { assignedTradieIds: id }],
         })
         .lean()
         .exec();
@@ -72,33 +76,57 @@ export class TradiesService {
   }
 
   async softDelete(id: string): Promise<Tradie | null> {
-    const deletedTradie = await this.tradieModel.findByIdAndDelete(id).lean().exec();
+    const deletedTradie = await this.tradieModel
+      .findByIdAndDelete(id)
+      .lean()
+      .exec();
     if (deletedTradie) {
       // Remove from assigned AND unassigned arrays
-      const affectedDids = await this.didModel.find({ 
-        $or: [
-          { assignedTradieIds: id },
-          { assignedTradieIds: id.length === 24 ? new (require('mongoose').Types.ObjectId)(id) : id },
-          { unassignedTradieIds: id },
-          { unassignedTradieIds: id.length === 24 ? new (require('mongoose').Types.ObjectId)(id) : id }
-        ]
-      }).exec();
+      const affectedDids = await this.didModel
+        .find({
+          $or: [
+            { assignedTradieIds: id },
+            {
+              assignedTradieIds:
+                id.length === 24
+                  ? new (require('mongoose').Types.ObjectId)(id)
+                  : id,
+            },
+            { unassignedTradieIds: id },
+            {
+              unassignedTradieIds:
+                id.length === 24
+                  ? new (require('mongoose').Types.ObjectId)(id)
+                  : id,
+            },
+          ],
+        })
+        .exec();
 
       for (const did of affectedDids) {
         if (did.assignedTradieIds) {
-          did.assignedTradieIds = did.assignedTradieIds.filter(tid => String(tid) !== String(id));
+          did.assignedTradieIds = did.assignedTradieIds.filter(
+            (tid) => String(tid) !== String(id),
+          );
         }
         if (did.unassignedTradieIds) {
-          did.unassignedTradieIds = did.unassignedTradieIds.filter(tid => String(tid) !== String(id));
+          did.unassignedTradieIds = did.unassignedTradieIds.filter(
+            (tid) => String(tid) !== String(id),
+          );
         }
         await did.save();
       }
 
       // If it was the primary legacy assignedTradieId, re-assign or unset
-      const didsWithPrimary = await this.didModel.find({ assignedTradieId: id }).exec();
+      const didsWithPrimary = await this.didModel
+        .find({ assignedTradieId: id })
+        .exec();
       for (const did of didsWithPrimary) {
-        const remainingIds = (did.assignedTradieIds || []).filter(tid => String(tid) !== String(id));
-        did.assignedTradieId = remainingIds.length > 0 ? remainingIds[0] as any : null;
+        const remainingIds = (did.assignedTradieIds || []).filter(
+          (tid) => String(tid) !== String(id),
+        );
+        did.assignedTradieId =
+          remainingIds.length > 0 ? (remainingIds[0] as any) : null;
         await did.save();
       }
     }
@@ -106,14 +134,15 @@ export class TradiesService {
   }
 
   async updateIsMapped(tradieId: string, value: boolean): Promise<void> {
-    await this.tradieModel.findByIdAndUpdate(tradieId, { isMapped: value }).exec();
+    await this.tradieModel
+      .findByIdAndUpdate(tradieId, { isMapped: value })
+      .exec();
   }
 
   async updateManyIsMapped(tradieIds: string[], value: boolean): Promise<void> {
     if (tradieIds.length === 0) return;
-    await this.tradieModel.updateMany(
-      { _id: { $in: tradieIds } },
-      { $set: { isMapped: value } }
-    ).exec();
+    await this.tradieModel
+      .updateMany({ _id: { $in: tradieIds } }, { $set: { isMapped: value } })
+      .exec();
   }
 }

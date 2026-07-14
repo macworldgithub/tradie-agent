@@ -40,7 +40,7 @@ export class AriRtpMediaService implements OnModuleInit, OnModuleDestroy {
   private readonly remoteKeyToCallId = new Map<string, string>();
   private onAudioFrameHandler: AudioFrameHandler | null = null;
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
     this.startSocket();

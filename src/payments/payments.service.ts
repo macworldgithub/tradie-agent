@@ -8,7 +8,10 @@ import { Did, DidDocument } from '../dids/schemas/did.schema';
 import { AdminService } from '../admin/admin.service';
 import { EnfonicaService } from '../enfonica/enfonica.service';
 import Stripe from 'stripe';
-import { ProcessedPayment, ProcessedPaymentDocument } from './schemas/processed-payment.schema';
+import {
+  ProcessedPayment,
+  ProcessedPaymentDocument,
+} from './schemas/processed-payment.schema';
 import { MailService } from '../common/mail/mail.service';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
 import { NumberPortingService } from '../number-porting/number-porting.service';
@@ -21,7 +24,8 @@ export class PaymentsService {
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
-    @InjectModel(ProcessedPayment.name) private processedPaymentModel: Model<ProcessedPaymentDocument>,
+    @InjectModel(ProcessedPayment.name)
+    private processedPaymentModel: Model<ProcessedPaymentDocument>,
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
     private configService: ConfigService,
     private adminService: AdminService,
@@ -41,9 +45,17 @@ export class PaymentsService {
 
   // ─── Helpers ────────────────────────────────────────────────────────
 
-  async markAsProcessed(stripeId: string, companyId: string, eventType: string): Promise<boolean> {
+  async markAsProcessed(
+    stripeId: string,
+    companyId: string,
+    eventType: string,
+  ): Promise<boolean> {
     try {
-      await this.processedPaymentModel.create({ stripeId, companyId, eventType });
+      await this.processedPaymentModel.create({
+        stripeId,
+        companyId,
+        eventType,
+      });
       return true;
     } catch (err: any) {
       if (err.code === 11000) {
@@ -81,10 +93,14 @@ export class PaymentsService {
 
     let daysRemaining = 0;
     if (user?.subscriptionExpiresAt) {
-      const msRemaining = new Date(user.subscriptionExpiresAt).getTime() - Date.now();
+      const msRemaining =
+        new Date(user.subscriptionExpiresAt).getTime() - Date.now();
       daysRemaining = Math.max(0, Math.ceil(msRemaining / (1000 * 3600 * 24)));
     } else if (did?.subscriptionStartDate) {
-      daysRemaining = Math.max(0, 30 - this.daysSince(did.subscriptionStartDate));
+      daysRemaining = Math.max(
+        0,
+        30 - this.daysSince(did.subscriptionStartDate),
+      );
     } else if (user?.hasPaid && user?.lastPaymentDate) {
       daysRemaining = Math.max(0, 30 - this.daysSince(user.lastPaymentDate));
     }
@@ -111,11 +127,15 @@ export class PaymentsService {
     // Also backdate subscriptionStartDate on the DID so the fallback calc matches
     const did = await this.didModel.findOne({ companyId: String(user._id) });
     if (did) {
-      did.subscriptionStartDate = new Date(Date.now() - (30 - days) * 24 * 60 * 60 * 1000);
+      did.subscriptionStartDate = new Date(
+        Date.now() - (30 - days) * 24 * 60 * 60 * 1000,
+      );
       await did.save();
     }
 
-    this.logger.warn(`[TEST] Set daysRemaining=${days} for user ${companyId}. subscriptionExpiresAt=${newExpiry.toISOString()}`);
+    this.logger.warn(
+      `[TEST] Set daysRemaining=${days} for user ${companyId}. subscriptionExpiresAt=${newExpiry.toISOString()}`,
+    );
 
     return {
       companyId,
@@ -132,7 +152,9 @@ export class PaymentsService {
 
     const subscriptionId = user.stripeSubscriptionId;
     if (!subscriptionId) {
-      throw new BadRequestException('No active Stripe subscription found for this user');
+      throw new BadRequestException(
+        'No active Stripe subscription found for this user',
+      );
     }
 
     try {
@@ -143,11 +165,17 @@ export class PaymentsService {
       user.cancelAtPeriodEnd = true;
       await user.save();
 
-      this.logger.log(`User ${user.email} set subscription to cancel at period end`);
+      this.logger.log(
+        `User ${user.email} set subscription to cancel at period end`,
+      );
       return { success: true, cancelAtPeriodEnd: true };
     } catch (err: any) {
-      this.logger.error(`Failed to cancel subscription for user ${user.email}: ${err.message}`);
-      throw new BadRequestException(`Failed to cancel subscription: ${err.message}`);
+      this.logger.error(
+        `Failed to cancel subscription for user ${user.email}: ${err.message}`,
+      );
+      throw new BadRequestException(
+        `Failed to cancel subscription: ${err.message}`,
+      );
     }
   }
 
@@ -157,7 +185,9 @@ export class PaymentsService {
 
     const subscriptionId = user.stripeSubscriptionId;
     if (!subscriptionId) {
-      throw new BadRequestException('No active Stripe subscription found for this user');
+      throw new BadRequestException(
+        'No active Stripe subscription found for this user',
+      );
     }
 
     try {
@@ -168,11 +198,17 @@ export class PaymentsService {
       user.cancelAtPeriodEnd = false;
       await user.save();
 
-      this.logger.log(`User ${user.email} resumed subscription (cancelled cancel_at_period_end)`);
+      this.logger.log(
+        `User ${user.email} resumed subscription (cancelled cancel_at_period_end)`,
+      );
       return { success: true, cancelAtPeriodEnd: false };
     } catch (err: any) {
-      this.logger.error(`Failed to resume subscription for user ${user.email}: ${err.message}`);
-      throw new BadRequestException(`Failed to resume subscription: ${err.message}`);
+      this.logger.error(
+        `Failed to resume subscription for user ${user.email}: ${err.message}`,
+      );
+      throw new BadRequestException(
+        `Failed to resume subscription: ${err.message}`,
+      );
     }
   }
   // ─── Checkout Session Creation ──────────────────────────────────────
@@ -211,8 +247,8 @@ export class PaymentsService {
       line_items: [
         {
           price: priceId,
-          quantity: 1
-        }
+          quantity: 1,
+        },
       ],
       allow_promotion_codes: true,
       success_url: `${successUrl}?session_id={CHECKOUT_SESSION_ID}`,
@@ -234,7 +270,9 @@ export class PaymentsService {
     }
 
     if (session.status !== 'complete' || session.payment_status !== 'paid') {
-      this.logger.warn(`Checkout session ${sessionId} is not paid (status: ${session.status}, payment: ${session.payment_status})`);
+      this.logger.warn(
+        `Checkout session ${sessionId} is not paid (status: ${session.status}, payment: ${session.payment_status})`,
+      );
       return { synced: false, message: 'Session is not paid' };
     }
 
@@ -244,13 +282,25 @@ export class PaymentsService {
 
     const user = await this.findUserByStripeInfo(customerId, email, companyId);
     if (!user) {
-      throw new BadRequestException(`User not found for Stripe customer ${customerId} / email ${email}`);
+      throw new BadRequestException(
+        `User not found for Stripe customer ${customerId} / email ${email}`,
+      );
     }
 
-    const wasMarked = await this.markAsProcessed(sessionId, String(user._id), 'checkout.session.completed');
+    const wasMarked = await this.markAsProcessed(
+      sessionId,
+      String(user._id),
+      'checkout.session.completed',
+    );
     if (!wasMarked) {
-      this.logger.log(`Checkout session ${sessionId} was already processed for user ${user.email}. Skipping redirect sync.`);
-      return { synced: true, message: 'Session already processed', hasPaid: true };
+      this.logger.log(
+        `Checkout session ${sessionId} was already processed for user ${user.email}. Skipping redirect sync.`,
+      );
+      return {
+        synced: true,
+        message: 'Session already processed',
+        hasPaid: true,
+      };
     }
 
     // Save stripe IDs if not already saved
@@ -262,7 +312,9 @@ export class PaymentsService {
     }
 
     await this.processSuccessfulPayment(user);
-    this.logger.log(`Payment synced successfully via session redirect for user ${user.email}`);
+    this.logger.log(
+      `Payment synced successfully via session redirect for user ${user.email}`,
+    );
 
     return { synced: true, hasPaid: true };
   }
@@ -273,7 +325,9 @@ export class PaymentsService {
     this.logger.log('--- ENTERING PaymentsService.handleWebhook ---');
     if (!this.stripe) throw new BadRequestException('Stripe is not configured');
 
-    const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
+    const webhookSecret = this.configService.get<string>(
+      'STRIPE_WEBHOOK_SECRET',
+    );
     if (!webhookSecret)
       throw new BadRequestException('Stripe webhook secret not configured');
 
@@ -281,14 +335,22 @@ export class PaymentsService {
 
     try {
       this.logger.log('Constructing Stripe Event from payload...');
-      event = this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);
+      event = this.stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        webhookSecret,
+      );
       this.logger.log('✅ Stripe Event successfully constructed!');
     } catch (err) {
-      this.logger.error(`❌ Webhook signature verification failed: ${err.message}`);
+      this.logger.error(
+        `❌ Webhook signature verification failed: ${err.message}`,
+      );
       throw new BadRequestException(`Webhook Error: ${err.message}`);
     }
 
-    this.logger.log(`>>>>> Processing Stripe webhook event type: [ ${event.type} ] <<<<<`);
+    this.logger.log(
+      `>>>>> Processing Stripe webhook event type: [ ${event.type} ] <<<<<`,
+    );
 
     switch (event.type) {
       case 'checkout.session.completed':
@@ -320,12 +382,20 @@ export class PaymentsService {
    *   Scenario 3: Service restoration (tradies were unmapped by cron, restore them)
    */
   private async handleCheckoutCompleted(session: any) {
-    this.logger.log(`--- ENTERING handleCheckoutCompleted for session ${session.id} ---`);
+    this.logger.log(
+      `--- ENTERING handleCheckoutCompleted for session ${session.id} ---`,
+    );
     const customerId = session.customer as string;
     const email = session.customer_details?.email;
 
-    this.logger.log(`Looking up user for customerId: ${customerId}, email: ${email}, client_reference: ${session.client_reference_id}`);
-    const user = await this.findUserByStripeInfo(customerId, email, session.client_reference_id);
+    this.logger.log(
+      `Looking up user for customerId: ${customerId}, email: ${email}, client_reference: ${session.client_reference_id}`,
+    );
+    const user = await this.findUserByStripeInfo(
+      customerId,
+      email,
+      session.client_reference_id,
+    );
 
     if (!user) {
       this.logger.warn(
@@ -347,18 +417,34 @@ export class PaymentsService {
       );
       // IMPORTANT: Mark session as processed so syncPaymentStatusBySessionId
       // (triggered by the /payment-success redirect) cannot double-stack days.
-      await this.markAsProcessed(session.id, String(user._id), 'checkout.session.completed');
+      await this.markAsProcessed(
+        session.id,
+        String(user._id),
+        'checkout.session.completed',
+      );
       // Still save stripe IDs if missing
       let changed = false;
-      if (customerId && !user.stripeCustomerId) { user.stripeCustomerId = customerId; changed = true; }
-      if (session.subscription && !user.stripeSubscriptionId) { user.stripeSubscriptionId = session.subscription; changed = true; }
+      if (customerId && !user.stripeCustomerId) {
+        user.stripeCustomerId = customerId;
+        changed = true;
+      }
+      if (session.subscription && !user.stripeSubscriptionId) {
+        user.stripeSubscriptionId = session.subscription;
+        changed = true;
+      }
       if (changed) await user.save();
       return;
     }
 
-    const wasMarked = await this.markAsProcessed(session.id, String(user._id), 'checkout.session.completed');
+    const wasMarked = await this.markAsProcessed(
+      session.id,
+      String(user._id),
+      'checkout.session.completed',
+    );
     if (!wasMarked) {
-      this.logger.log(`Checkout session ${session.id} was already processed for user ${user.email}. Skipping webhook.`);
+      this.logger.log(
+        `Checkout session ${session.id} was already processed for user ${user.email}. Skipping webhook.`,
+      );
       return;
     }
 
@@ -389,14 +475,22 @@ export class PaymentsService {
       return;
     }
 
-    const wasMarked = await this.markAsProcessed(invoice.id, String(user._id), 'invoice.paid');
+    const wasMarked = await this.markAsProcessed(
+      invoice.id,
+      String(user._id),
+      'invoice.paid',
+    );
     if (!wasMarked) {
-      this.logger.log(`Invoice ${invoice.id} was already processed for user ${user.email}. Skipping.`);
+      this.logger.log(
+        `Invoice ${invoice.id} was already processed for user ${user.email}. Skipping.`,
+      );
       return;
     }
 
     await this.processSuccessfulPayment(user);
-    this.logger.log(`Invoice paid for user ${user.email} — subscription renewed`);
+    this.logger.log(
+      `Invoice paid for user ${user.email} — subscription renewed`,
+    );
   }
 
   private async handleInvoicePaymentFailed(invoice: any) {
@@ -420,8 +514,13 @@ export class PaymentsService {
       .exec();
 
     if (user) {
-      if (user.stripeSubscriptionId && user.stripeSubscriptionId !== subscription.id) {
-        this.logger.log(`Ignoring cancelled subscription ${subscription.id} for user ${user.email} (active sub is ${user.stripeSubscriptionId})`);
+      if (
+        user.stripeSubscriptionId &&
+        user.stripeSubscriptionId !== subscription.id
+      ) {
+        this.logger.log(
+          `Ignoring cancelled subscription ${subscription.id} for user ${user.email} (active sub is ${user.stripeSubscriptionId})`,
+        );
         return;
       }
 
@@ -440,8 +539,13 @@ export class PaymentsService {
       .exec();
 
     if (user) {
-      if (user.stripeSubscriptionId && user.stripeSubscriptionId !== subscription.id) {
-        this.logger.log(`Ignoring updated subscription ${subscription.id} for user ${user.email} (active sub is ${user.stripeSubscriptionId})`);
+      if (
+        user.stripeSubscriptionId &&
+        user.stripeSubscriptionId !== subscription.id
+      ) {
+        this.logger.log(
+          `Ignoring updated subscription ${subscription.id} for user ${user.email} (active sub is ${user.stripeSubscriptionId})`,
+        );
         return;
       }
 
@@ -449,7 +553,9 @@ export class PaymentsService {
       if (user.cancelAtPeriodEnd !== cancelAtPeriodEnd) {
         user.cancelAtPeriodEnd = cancelAtPeriodEnd;
         await user.save();
-        this.logger.log(`Synced cancel_at_period_end=${cancelAtPeriodEnd} for user ${user.email} from Stripe webhook`);
+        this.logger.log(
+          `Synced cancel_at_period_end=${cancelAtPeriodEnd} for user ${user.email} from Stripe webhook`,
+        );
       }
     }
   }
@@ -474,20 +580,27 @@ export class PaymentsService {
 
     if (user.phoneNumberInstanceName) {
       // ─── Returning user (Scenario 2 or 3) ───
-      this.logger.log(`Returning user payment for ${user.email} (companyId: ${userId})`);
+      this.logger.log(
+        `Returning user payment for ${user.email} (companyId: ${userId})`,
+      );
 
       const did = await this.didModel.findOne({ companyId: userId }).exec();
 
       if (did) {
-        const wasUnmapped = did.unassignedTradieIds && did.unassignedTradieIds.length > 0;
+        const wasUnmapped =
+          did.unassignedTradieIds && did.unassignedTradieIds.length > 0;
 
         if (wasUnmapped) {
           // Scenario 3: Service was stopped by scheduler — restore tradies
-          this.logger.log(`Service was stopped. Remapping tradies for ${user.email}`);
+          this.logger.log(
+            `Service was stopped. Remapping tradies for ${user.email}`,
+          );
           await this.adminService.remapDid(String(did._id));
         } else {
           // Scenario 2: Still active — tradies already mapped, just extend
-          this.logger.log(`Service still active. Skipping remap, just renewing for ${user.email}`);
+          this.logger.log(
+            `Service still active. Skipping remap, just renewing for ${user.email}`,
+          );
         }
 
         // Always extend the DID subscription.
@@ -497,7 +610,9 @@ export class PaymentsService {
           `Returning user ${user.email} renewed. Expires: ${renewResult?.newSubscriptionExpiresAt?.toISOString() ?? 'unknown'}`,
         );
       } else {
-        this.logger.warn(`Returning user has no DID record to remap/renew: ${userId}`);
+        this.logger.warn(
+          `Returning user has no DID record to remap/renew: ${userId}`,
+        );
         // No DID to renew — at minimum mark as paid
         user.hasPaid = true;
         user.lastPaymentDate = new Date();
@@ -505,7 +620,9 @@ export class PaymentsService {
       }
     } else {
       // ─── First-time user (Scenario 1) ───
-      this.logger.log(`First-time user payment. Triggering Enfonica flow for ${user.email}`);
+      this.logger.log(
+        `First-time user payment. Triggering Enfonica flow for ${user.email}`,
+      );
 
       // Set hasPaid immediately so even if Enfonica fails, we know they paid
       user.hasPaid = true;
@@ -515,9 +632,12 @@ export class PaymentsService {
       // ── Porting guard ───────────────────────────────────────────────────
       // If the company is porting an existing number, skip Enfonica provisioning.
       // Their subscription is active — the number arrives later via the porting process.
-      const isPorting = await this.numberPortingService.isCompanyPorting(userId);
+      const isPorting =
+        await this.numberPortingService.isCompanyPorting(userId);
       if (isPorting) {
-        this.logger.log(`Company ${userId} is porting a number — skipping Enfonica DID provisioning.`);
+        this.logger.log(
+          `Company ${userId} is porting a number — skipping Enfonica DID provisioning.`,
+        );
         return;
       }
       // ───────────────────────────────────────────────────────────────────
@@ -526,15 +646,26 @@ export class PaymentsService {
       await this.enfonicaService.provisionFirstTimeDid(userId);
 
       // Check if tradie has callReceivedOn set to 'mobile' to send forwarding instructions
-      const tradie = await this.tradieModel.findOne({ companyId: userId }).exec();
+      const tradie = await this.tradieModel
+        .findOne({ companyId: userId })
+        .exec();
       if (tradie && tradie.callReceivedOn === 'mobile') {
         const did = await this.didModel.findOne({ companyId: userId }).exec();
         if (did && did.didNumber) {
-          this.logger.log(`Sending Call Forwarding Instructions Email to ${user.email} (Country: ${user.country})`);
+          this.logger.log(
+            `Sending Call Forwarding Instructions Email to ${user.email} (Country: ${user.country})`,
+          );
           try {
-            await this.mailService.sendCallForwardingInstructionsEmail(user.email, did.didNumber, user.country);
+            await this.mailService.sendCallForwardingInstructionsEmail(
+              user.email,
+              did.didNumber,
+              user.country,
+            );
           } catch (emailErr: any) {
-            this.logger.error(`Failed to send Call Forwarding Instructions Email to ${user.email}: ${emailErr.message}`, emailErr.stack);
+            this.logger.error(
+              `Failed to send Call Forwarding Instructions Email to ${user.email}: ${emailErr.message}`,
+              emailErr.stack,
+            );
           }
         }
       }
@@ -566,7 +697,9 @@ export class PaymentsService {
           // unmapDid moves assignedTradieIds → unassignedTradieIds, sets hasPaid = false
           await this.adminService.unmapDid(String(did._id));
         } else {
-          this.logger.warn(`Expired user ${user._id} has no DID record to unmap.`);
+          this.logger.warn(
+            `Expired user ${user._id} has no DID record to unmap.`,
+          );
           user.hasPaid = false;
           await user.save();
         }
@@ -582,7 +715,9 @@ export class PaymentsService {
       }
     }
 
-    this.logger.log(`Completed auto-expiry check. Processed ${expiredUsers.length} users.`);
+    this.logger.log(
+      `Completed auto-expiry check. Processed ${expiredUsers.length} users.`,
+    );
   }
 
   // ─── User Lookup ────────────────────────────────────────────────────

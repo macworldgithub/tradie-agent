@@ -1,4 +1,8 @@
-import { getPrefixForCity, AU_CITY_PREFIXES, InvalidCityError } from './au-city-prefixes';
+import {
+  getPrefixForCity,
+  AU_CITY_PREFIXES,
+  InvalidCityError,
+} from './au-city-prefixes';
 
 describe('au-city-prefixes', () => {
   it('should return correct prefix for every code in the table', () => {

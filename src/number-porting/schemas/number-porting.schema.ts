@@ -27,43 +27,97 @@ export class NumberPorting {
   @Prop({ required: true })
   porting: boolean;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   displayName?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   numberToPort?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   providerName?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   accountNumber?: string;
 
-  @Prop({ enum: ['Company', 'Business'], required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    enum: ['Company', 'Business'],
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   entityType?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   identificationNumber?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   address?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   city?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   state?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   postcode?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   country?: string;
 
-  @Prop({ required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   supportingDocumentPath?: string;
 
-  @Prop({ type: AuthorisedContact, required: function(this: any) { return this.porting === true; } })
+  @Prop({
+    type: AuthorisedContact,
+    required: function (this: any) {
+      return this.porting === true;
+    },
+  })
   authorisedContact?: AuthorisedContact;
 }
 

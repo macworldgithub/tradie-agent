@@ -13,10 +13,13 @@ if (!MONGO_URI) {
 }
 
 // Minimal schema to read/update the relevant fields
-const DidSchema = new mongoose.Schema({
-  assignedTradieId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tradie' },
-  assignedTradieIds: [{ type: String }],
-}, { strict: false });
+const DidSchema = new mongoose.Schema(
+  {
+    assignedTradieId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tradie' },
+    assignedTradieIds: [{ type: String }],
+  },
+  { strict: false },
+);
 
 const Did = mongoose.model('Did', DidSchema, 'dids'); // Assuming the collection is named 'dids'
 
@@ -30,8 +33,8 @@ async function migrate() {
       assignedTradieId: { $exists: true, $ne: null },
       $or: [
         { assignedTradieIds: { $exists: false } },
-        { assignedTradieIds: { $size: 0 } }
-      ]
+        { assignedTradieIds: { $size: 0 } },
+      ],
     });
 
     console.log(`Found ${didsToMigrate.length} DIDs to migrate.`);
@@ -41,7 +44,9 @@ async function migrate() {
         // Backfill the array with the single assignedTradieId
         did.assignedTradieIds = [did.assignedTradieId.toString()];
         await did.save();
-        console.log(`Migrated DID ${did._id} (added tradie ${did.assignedTradieId.toString()})`);
+        console.log(
+          `Migrated DID ${did._id} (added tradie ${did.assignedTradieId.toString()})`,
+        );
       }
     }
 

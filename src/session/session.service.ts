@@ -40,7 +40,9 @@ export class SessionService {
 
   deleteSession(callSid: string): void {
     this.sessions.delete(callSid);
-    this.logger.log(`Session deleted for callSid: ${callSid}. Active sessions: ${this.sessions.size}`);
+    this.logger.log(
+      `Session deleted for callSid: ${callSid}. Active sessions: ${this.sessions.size}`,
+    );
   }
 
   @Cron('0 */10 * * * *')

@@ -23,7 +23,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @ApiBearerAuth()
 @Controller('dids')
 export class DidsController {
-  constructor(private readonly didsService: DidsService) { }
+  constructor(private readonly didsService: DidsService) {}
 
   @Post()
   @Roles('admin')

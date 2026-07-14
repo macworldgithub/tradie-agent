@@ -15,10 +15,13 @@ export class SmsTestController {
   @ApiOperation({ summary: 'Send a test SMS via MobileMessage API' })
   @ApiBody({ type: SendTestSmsDto })
   async sendTestSms(@Body() dto: SendTestSmsDto) {
-    const rawResult = await this.notificationService.sendSms(dto.to, dto.message);
+    const rawResult = await this.notificationService.sendSms(
+      dto.to,
+      dto.message,
+    );
     const success = rawResult?.results?.[0]?.status === 'success';
-    return { 
-      success, 
+    return {
+      success,
       message: `Test SMS dispatched to ${dto.to}`,
       rawResult,
     };

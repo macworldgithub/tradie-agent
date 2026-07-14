@@ -24,17 +24,23 @@ export class EmailWorkerService {
     private readonly mailService: MailService,
     @InjectModel(Customer.name)
     private readonly customerModel: Model<CustomerDocument>,
-  ) { }
+  ) {}
 
   async processPostCallEmail(event: CallEndedEvent): Promise<void> {
-    const { enfonicaCallId, customerNumber, didNumber, startTime, endTime } = event;
-    this.logger.log(`Starting post-call email processing for call ${enfonicaCallId}`);
+    const { enfonicaCallId, customerNumber, didNumber, startTime, endTime } =
+      event;
+    this.logger.log(
+      `Starting post-call email processing for call ${enfonicaCallId}`,
+    );
 
     try {
       // 1. Fetch CallLog from DB
-      const callRecord = await this.callsService.findByEnfonicaCallId(enfonicaCallId);
+      const callRecord =
+        await this.callsService.findByEnfonicaCallId(enfonicaCallId);
       if (!callRecord) {
-        this.logger.warn(`No CallLog found in DB for enfonicaCallId: ${enfonicaCallId}`);
+        this.logger.warn(
+          `No CallLog found in DB for enfonicaCallId: ${enfonicaCallId}`,
+        );
         return;
       }
 
@@ -50,27 +56,38 @@ export class EmailWorkerService {
       let recipientEmail = '';
       let ccEmails: string[] = [];
 
-      const idsToUse = callRecord.tradieIds?.length 
-        ? callRecord.tradieIds 
-        : (callRecord.tradieId ? [String(callRecord.tradieId)] : []);
+      const idsToUse = callRecord.tradieIds?.length
+        ? callRecord.tradieIds
+        : callRecord.tradieId
+          ? [String(callRecord.tradieId)]
+          : [];
 
       if (idsToUse.length === 0) {
-        this.logger.warn(`CallLog ${enfonicaCallId} does not have any tradieIds or tradieId`);
+        this.logger.warn(
+          `CallLog ${enfonicaCallId} does not have any tradieIds or tradieId`,
+        );
         return;
       }
 
       const tradies = await this.tradiesService.findByIds(idsToUse);
       if (tradies.length === 0) {
-        this.logger.warn(`No Tradies found in DB for IDs: ${idsToUse.join(',')}`);
+        this.logger.warn(
+          `No Tradies found in DB for IDs: ${idsToUse.join(',')}`,
+        );
         return;
       }
 
       const activeEmailTradies = tradies.filter(
-        (t) => t.email && (t.notificationPreference === 'email' || t.notificationPreference === 'both')
+        (t) =>
+          t.email &&
+          (t.notificationPreference === 'email' ||
+            t.notificationPreference === 'both'),
       );
 
       if (activeEmailTradies.length === 0) {
-        this.logger.log('Skipping email notification: no active tradies with email notification preference');
+        this.logger.log(
+          'Skipping email notification: no active tradies with email notification preference',
+        );
         return;
       }
 
@@ -105,11 +122,17 @@ export class EmailWorkerService {
 
       // Fallback 2: Clean and match suffix
       if (!customer) {
-        const cleanNumber = (num: string) => num.replace(/\D/g, '').replace(/^(61|0)/, '');
+        const cleanNumber = (num: string) =>
+          num.replace(/\D/g, '').replace(/^(61|0)/, '');
         const targetClean = cleanNumber(phoneToQuery || customerNumber || '');
         if (targetClean) {
-          const customers = await this.customerModel.find().sort({ createdAt: -1 }).limit(100).exec();
-          customer = customers.find((c) => cleanNumber(c.phone) === targetClean) || null;
+          const customers = await this.customerModel
+            .find()
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .exec();
+          customer =
+            customers.find((c) => cleanNumber(c.phone) === targetClean) || null;
         }
       }
 
@@ -134,8 +157,14 @@ export class EmailWorkerService {
         second: '2-digit',
         timeZoneName: 'short',
       };
-      const formattedStartTime = startTime.toLocaleString('en-AU', dateFormatOptions);
-      const formattedEndTime = endTime.toLocaleString('en-AU', dateFormatOptions);
+      const formattedStartTime = startTime.toLocaleString(
+        'en-AU',
+        dateFormatOptions,
+      );
+      const formattedEndTime = endTime.toLocaleString(
+        'en-AU',
+        dateFormatOptions,
+      );
 
       // 5. Construct email details
       const subject = `Post-Call Summary: ${customer.name || 'New Lead'}`;
@@ -162,7 +191,9 @@ ${tradieInfoSection}
 `;
 
       // 6. Send the email via NotificationService
-      this.logger.log(`Sending post-call summary email to: ${recipientEmail}${ccEmails.length > 0 ? ` (CC: ${ccEmails.join(',')})` : ''}`);
+      this.logger.log(
+        `Sending post-call summary email to: ${recipientEmail}${ccEmails.length > 0 ? ` (CC: ${ccEmails.join(',')})` : ''}`,
+      );
       await this.mailService.sendPostCallSummaryEmail(
         recipientEmail,
         ccEmails.length > 0 ? ccEmails : undefined,
@@ -185,7 +216,10 @@ ${tradieInfoSection}
       );
       this.logger.log(`Successfully sent email to: ${recipientEmail}`);
     } catch (err) {
-      this.logger.error(`Failed to process post-call email for ${enfonicaCallId}:`, err);
+      this.logger.error(
+        `Failed to process post-call email for ${enfonicaCallId}:`,
+        err,
+      );
     }
   }
 }

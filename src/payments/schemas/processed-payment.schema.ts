@@ -15,4 +15,5 @@ export class ProcessedPayment {
   eventType: string; // e.g. 'checkout.session.completed', 'invoice.paid', or 'subscription.sync'
 }
 
-export const ProcessedPaymentSchema = SchemaFactory.createForClass(ProcessedPayment);
+export const ProcessedPaymentSchema =
+  SchemaFactory.createForClass(ProcessedPayment);

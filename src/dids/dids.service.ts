@@ -18,7 +18,7 @@ export class DidsService {
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
     private tradiesService: TradiesService,
-  ) { }
+  ) {}
 
   private daysSince(date?: Date): number {
     if (!date) return 30;
@@ -29,9 +29,16 @@ export class DidsService {
   async getStatus(companyId: string) {
     const did = await this.didModel.findOne({ companyId }).lean().exec();
     if (!did) {
-      return { didNumber: null, isActive: false, daysRemaining: 0, subscriptionStartDate: null };
+      return {
+        didNumber: null,
+        isActive: false,
+        daysRemaining: 0,
+        subscriptionStartDate: null,
+      };
     }
-    const daysRemaining = did.subscriptionStartDate ? Math.max(0, 30 - this.daysSince(did.subscriptionStartDate)) : 0;
+    const daysRemaining = did.subscriptionStartDate
+      ? Math.max(0, 30 - this.daysSince(did.subscriptionStartDate))
+      : 0;
     return {
       didNumber: did.didNumber,
       isActive: did.assignedTradieIds && did.assignedTradieIds.length > 0,
@@ -86,7 +93,11 @@ export class DidsService {
   }
 
   async create(dto: CreateDidDto & { companyId: string }): Promise<Did> {
-    await this.validateTradieAssignments(dto.assignedTradieId, dto.assignedTradieIds, dto.companyId);
+    await this.validateTradieAssignments(
+      dto.assignedTradieId,
+      dto.assignedTradieIds,
+      dto.companyId,
+    );
 
     const existing = await this.didModel
       .findOne({ companyId: dto.companyId })
@@ -94,14 +105,23 @@ export class DidsService {
       .exec();
 
     if (existing) {
-      const existingAssignedIds = existing.assignedTradieIds || (existing.assignedTradieId ? [String(existing.assignedTradieId)] : []);
+      const existingAssignedIds =
+        existing.assignedTradieIds ||
+        (existing.assignedTradieId ? [String(existing.assignedTradieId)] : []);
       const newAssignedIds = [...existingAssignedIds];
 
-      if (dto.assignedTradieId && !newAssignedIds.includes(dto.assignedTradieId)) {
+      if (
+        dto.assignedTradieId &&
+        !newAssignedIds.includes(dto.assignedTradieId)
+      ) {
         newAssignedIds.push(dto.assignedTradieId);
       }
 
-      await this.validateTradieAssignments(undefined, newAssignedIds, dto.companyId);
+      await this.validateTradieAssignments(
+        undefined,
+        newAssignedIds,
+        dto.companyId,
+      );
 
       const updateQuery: any = {};
       if (dto.assignedTradieId) {
@@ -124,13 +144,15 @@ export class DidsService {
           .findByIdAndUpdate(
             existing._id,
             Object.keys(updateQuery).length > 0 ? updateQuery : { $set: {} },
-            { new: true, runValidators: true }
+            { new: true, runValidators: true },
           )
           .populate('assignedTradieId', 'name phoneNumber email')
           .exec();
       } catch (error) {
         if (error.code === 11000) {
-          throw new BadRequestException('This DID number is already registered to another account.');
+          throw new BadRequestException(
+            'This DID number is already registered to another account.',
+          );
         }
         throw error;
       }
@@ -144,7 +166,11 @@ export class DidsService {
 
     const assignedIds = dto.assignedTradieId ? [dto.assignedTradieId] : [];
 
-    await this.validateTradieAssignments(dto.assignedTradieId, assignedIds, dto.companyId);
+    await this.validateTradieAssignments(
+      dto.assignedTradieId,
+      assignedIds,
+      dto.companyId,
+    );
 
     try {
       const created = await new this.didModel({
@@ -161,25 +187,29 @@ export class DidsService {
       return created;
     } catch (error) {
       if (error.code === 11000) {
-        throw new BadRequestException('This DID number is already registered to another account.');
+        throw new BadRequestException(
+          'This DID number is already registered to another account.',
+        );
       }
       throw error;
     }
   }
 
   async findAll(companyId: string): Promise<Did[]> {
-    console.log("companyId", companyId);
+    console.log('companyId', companyId);
     const dids = await this.didModel
       .find({ companyId })
       .populate('assignedTradieId', 'name phoneNumber email')
       .lean()
       .exec();
-    console.log("dids", dids);
+    console.log('dids', dids);
 
     return dids.map((did) => ({
       ...did,
       isFullyMapped: Boolean(
-        did.didNumber && (did.assignedTradieId || (did.assignedTradieIds && did.assignedTradieIds.length > 0)),
+        did.didNumber &&
+        (did.assignedTradieId ||
+          (did.assignedTradieIds && did.assignedTradieIds.length > 0)),
       ),
     })) as Did[];
   }
@@ -206,7 +236,9 @@ export class DidsService {
     return {
       ...did,
       isFullyMapped: Boolean(
-        did.didNumber && (did.assignedTradieId || (did.assignedTradieIds && did.assignedTradieIds.length > 0)),
+        did.didNumber &&
+        (did.assignedTradieId ||
+          (did.assignedTradieIds && did.assignedTradieIds.length > 0)),
       ),
     } as Did;
   }
@@ -217,10 +249,20 @@ export class DidsService {
       throw new NotFoundException('DID not found');
     }
 
-    const assignedTradieId = dto.assignedTradieId !== undefined ? dto.assignedTradieId : existing.assignedTradieId;
-    const assignedTradieIds = dto.assignedTradieIds !== undefined ? dto.assignedTradieIds : existing.assignedTradieIds;
+    const assignedTradieId =
+      dto.assignedTradieId !== undefined
+        ? dto.assignedTradieId
+        : existing.assignedTradieId;
+    const assignedTradieIds =
+      dto.assignedTradieIds !== undefined
+        ? dto.assignedTradieIds
+        : existing.assignedTradieIds;
 
-    await this.validateTradieAssignments(assignedTradieId, assignedTradieIds, existing.companyId);
+    await this.validateTradieAssignments(
+      assignedTradieId,
+      assignedTradieIds,
+      existing.companyId,
+    );
 
     const updateQuery: any = { $set: { ...dto } };
     if (dto.assignedTradieId) {
@@ -249,27 +291,38 @@ export class DidsService {
     }
 
     const assignedTradieIds = existing.assignedTradieIds || [];
-    const newAssignedIds = assignedTradieIds.filter(id => String(id) !== String(tradieId));
+    const newAssignedIds = assignedTradieIds.filter(
+      (id) => String(id) !== String(tradieId),
+    );
 
     const updateQuery: any = {
-      $pull: { assignedTradieIds: tradieId }
+      $pull: { assignedTradieIds: tradieId },
     };
 
-    if (existing.assignedTradieId && String(existing.assignedTradieId) === String(tradieId)) {
+    if (
+      existing.assignedTradieId &&
+      String(existing.assignedTradieId) === String(tradieId)
+    ) {
       updateQuery.$set = {
-        assignedTradieId: newAssignedIds.length > 0 ? newAssignedIds[0] : null
+        assignedTradieId: newAssignedIds.length > 0 ? newAssignedIds[0] : null,
       };
     }
 
     const updated = await this.didModel
-      .findByIdAndUpdate(existing._id, updateQuery, { new: true, runValidators: true })
+      .findByIdAndUpdate(existing._id, updateQuery, {
+        new: true,
+        runValidators: true,
+      })
       .populate('assignedTradieId', 'name phoneNumber email')
       .lean()
       .exec();
 
-    const stillExists = await this.didModel.findOne({ 
-      assignedTradieIds: tradieId 
-    }).lean().exec();
+    const stillExists = await this.didModel
+      .findOne({
+        assignedTradieIds: tradieId,
+      })
+      .lean()
+      .exec();
 
     if (!stillExists) {
       await this.tradiesService.updateIsMapped(tradieId, false);
@@ -279,10 +332,7 @@ export class DidsService {
   }
 
   async ensureActive(didNumber: string): Promise<boolean> {
-    const d = await this.didModel
-      .findOne({ didNumber })
-      .lean()
-      .exec();
+    const d = await this.didModel.findOne({ didNumber }).lean().exec();
     return !!d;
   }
 

@@ -241,7 +241,9 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
         `[${callId}] Step 4: Creating WebSocket externalMedia channel`,
       );
       const externalMediaChannelId = `extmedia-${callId}`;
-      const readyPromise = this.waitForExternalMediaReady(externalMediaChannelId);
+      const readyPromise = this.waitForExternalMediaReady(
+        externalMediaChannelId,
+      );
 
       await this.createWebSocketExternalMediaChannel(callId);
 
@@ -314,7 +316,9 @@ export class AriService implements OnModuleInit, OnModuleDestroy {
     }
     this.cleanupInProgress.add(callId);
 
-    const pendingResolver = this.pendingExternalMediaChannels.get(`extmedia-${callId}`);
+    const pendingResolver = this.pendingExternalMediaChannels.get(
+      `extmedia-${callId}`,
+    );
     if (pendingResolver) {
       this.pendingExternalMediaChannels.delete(`extmedia-${callId}`);
     }
