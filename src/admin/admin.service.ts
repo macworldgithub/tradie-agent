@@ -201,12 +201,9 @@ export class AdminService {
       const isPorting = await this.numberPortingModel.findOne({ companyId, porting: true }).exec();
       if (isPorting && this.stripe && updatedCompany?.stripeSubscriptionId) {
         try {
-          // To set the billing cycle to exactly 30 days from now, we need to cancel the current subscription
-          // and create a new one with the correct billing_cycle_anchor
+          // To set the billing cycle to exactly 30 days from now, we need to create a new subscription
+          // with the correct billing_cycle_anchor, then cancel the old one
           const subscription = await this.stripe.subscriptions.retrieve(updatedCompany.stripeSubscriptionId);
-          
-          // Cancel current subscription immediately (not at period end)
-          await this.stripe.subscriptions.cancel(updatedCompany.stripeSubscriptionId);
           
           // Create new subscription with billing cycle anchored to 30 days from now
           const newBillingDate = Math.floor(now.getTime() / 1000) + (30 * 24 * 60 * 60);
@@ -220,6 +217,9 @@ export class AdminService {
             trial_end: newBillingDate,
             proration_behavior: 'none'
           });
+          
+          // Only cancel old subscription after new one is successfully created
+          await this.stripe.subscriptions.cancel(updatedCompany.stripeSubscriptionId);
           
           // Update the company with the new subscription ID
           await this.userModel.findByIdAndUpdate(companyId, {
