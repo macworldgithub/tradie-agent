@@ -28,6 +28,7 @@ import {
   NumberPorting,
   NumberPortingDocument,
 } from '../number-porting/schemas/number-porting.schema';
+import { Counter, CounterDocument } from './schemas/counter.schema';
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -38,6 +39,7 @@ export class AuthService implements OnModuleInit {
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
     @InjectModel(NumberPorting.name)
     private numberPortingModel: Model<NumberPortingDocument>,
+    @InjectModel(Counter.name) private counterModel: Model<CounterDocument>,
     private jwtService: JwtService,
     private configService: ConfigService,
     private mailService: MailService,
@@ -221,6 +223,15 @@ export class AuthService implements OnModuleInit {
         emailVerified: false,
         emailVerificationToken: otp,
       });
+
+      // ── Assign companyNo atomically ──────────────────────────────────
+      const counter = await this.counterModel.findOneAndUpdate(
+        { name: 'companyNo' },
+        { $inc: { seq: 1 } },
+        { new: true, upsert: true },
+      );
+      newUser.companyNo = counter.seq;
+      // ────────────────────────────────────────────────────────────────
 
       await newUser.save({ session });
 
