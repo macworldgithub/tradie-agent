@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { User, UserDocument } from '../auth/schemas/user.schema';
 import { Did, DidDocument } from '../dids/schemas/did.schema';
 import { Tradie, TradieDocument } from '../tradies/schemas/tradie.schema';
+import { NumberPorting, NumberPortingDocument } from '../number-porting/schemas/number-porting.schema';
 import { TradiesService } from '../tradies/tradies.service';
 import { DidsService } from '../dids/dids.service';
 import { CreateTradieDto } from '../tradies/dtos/create-tradie.dto';
@@ -20,6 +21,7 @@ export class AdminService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
     @InjectModel(Tradie.name) private tradieModel: Model<TradieDocument>,
+    @InjectModel(NumberPorting.name) private numberPortingModel: Model<NumberPortingDocument>,
     private configService: ConfigService,
     private tradiesService: TradiesService,
     private didsService: DidsService,
@@ -90,6 +92,7 @@ export class AdminService {
 
     const did = await this.didModel.findOne({ companyId }).exec();
     const tradies = await this.tradieModel.find({ companyId }).lean().exec();
+    const portingInfo = await this.numberPortingModel.findOne({ companyId }).lean().exec();
 
     // Diagnostic: log if ghost IDs are detected (do NOT write on a GET — data mutations on reads cause silent data loss)
     if (did && did.assignedTradieIds && did.assignedTradieIds.length > 0) {
@@ -123,6 +126,7 @@ export class AdminService {
       did: did ? did.toObject() : null,
       tradies,
       daysRemaining,
+      portingInfo,
     };
   }
 

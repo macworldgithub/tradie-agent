@@ -7,6 +7,7 @@ import { Did, DidSchema } from '../dids/schemas/did.schema';
 import { Tradie, TradieSchema } from '../tradies/schemas/tradie.schema';
 import { TradiesModule } from '../tradies/tradies.module';
 import { DidsModule } from '../dids/dids.module';
+import { NumberPortingModule } from '../number-porting/number-porting.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { DidsModule } from '../dids/dids.module';
     ]),
     TradiesModule,
     DidsModule,
+    NumberPortingModule,
   ],
   controllers: [AdminController],
   providers: [AdminService],
