@@ -47,6 +47,20 @@ export class AuthService implements OnModuleInit {
 
   async onModuleInit() {
     await this.seedAdminUser();
+    await this.seedCounter();
+  }
+
+  private async seedCounter() {
+    try {
+      await this.counterModel.updateOne(
+        { name: 'companyNo' },
+        { $setOnInsert: { seq: 10000 } },
+        { upsert: true }
+      );
+      this.logger.log('Counter seeded successfully.');
+    } catch (e) {
+      this.logger.error('Failed to seed counter', e);
+    }
   }
 
   private async seedAdminUser() {
@@ -225,11 +239,9 @@ export class AuthService implements OnModuleInit {
       });
 
       // ── Assign companyNo atomically ──────────────────────────────────
-      // Uses an aggregation pipeline so that on first upsert, seq starts at
-      // 10001 ($ifNull treats missing field as 10000, then +1 = 10001).
       const counter = await this.counterModel.findOneAndUpdate(
         { name: 'companyNo' },
-        [{ $set: { seq: { $add: [{ $ifNull: ['$seq', 10000] }, 1] } } }],
+        { $inc: { seq: 1 } },
         { new: true, upsert: true },
       );
       newUser.companyNo = counter.seq;
