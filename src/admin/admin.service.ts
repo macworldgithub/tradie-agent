@@ -14,9 +14,12 @@ import { TradiesService } from '../tradies/tradies.service';
 import { DidsService } from '../dids/dids.service';
 import { CreateTradieDto } from '../tradies/dtos/create-tradie.dto';
 import { CreateAdminDidDto } from './dtos/create-admin-did.dto';
+import Stripe from 'stripe';
 
 @Injectable()
 export class AdminService {
+  private stripe: any;
+
   constructor(
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     @InjectModel(Did.name) private didModel: Model<DidDocument>,
@@ -25,7 +28,12 @@ export class AdminService {
     private configService: ConfigService,
     private tradiesService: TradiesService,
     private didsService: DidsService,
-  ) {}
+  ) {
+    const stripeKey = this.configService.get<string>('STRIPE_SECRET_KEY');
+    if (stripeKey) {
+      this.stripe = new Stripe(stripeKey, { apiVersion: '2024-04-10' as any });
+    }
+  }
 
   private daysSince(date?: Date): number {
     if (!date) return 30; // 30 minus 30 = 0 days remaining if no date
@@ -175,13 +183,34 @@ export class AdminService {
       }
 
       await this.tradiesService.updateIsMapped(tradieId, true);
-      // TODO: Remove manual hasPaid and lastPaymentDate updates when Stripe is fully live
-      await this.userModel
+      
+      // Start the official 30-day clock for the user now that they have a number
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      const updatedCompany = await this.userModel
         .findByIdAndUpdate(companyId, {
           hasPaid: true,
-          lastPaymentDate: new Date(),
-        })
+          lastPaymentDate: now,
+          subscriptionExpiresAt: expiresAt,
+        }, { new: true })
         .exec();
+
+      // If this is a porting customer, shift their Stripe billing cycle exactly 30 days from now
+      // so their payment anniversary matches their true go-live date. Completely ignores Enfonica automated users.
+      const isPorting = await this.numberPortingModel.findOne({ companyId, porting: true }).exec();
+      if (isPorting && this.stripe && updatedCompany?.stripeSubscriptionId) {
+        try {
+          await this.stripe.subscriptions.update(updatedCompany.stripeSubscriptionId, {
+            trial_end: Math.floor(now.getTime() / 1000) + (30 * 24 * 60 * 60),
+            proration_behavior: 'none'
+          });
+          console.log(`[AdminService] Shifted Stripe billing cycle for porting company ${companyId}`);
+        } catch (stripeErr: any) {
+          console.error(`[AdminService] Failed to shift Stripe billing cycle for ${companyId}: ${stripeErr.message}`);
+        }
+      }
+
       return did;
     }
 

@@ -578,46 +578,38 @@ export class PaymentsService {
   private async processSuccessfulPayment(user: UserDocument) {
     const userId = String(user._id);
 
-    if (user.phoneNumberInstanceName) {
+    const did = await this.didModel.findOne({ companyId: userId }).exec();
+
+    // If they have a DID (either from Enfonica or manually assigned by Admin for porting),
+    // they are a returning user.
+    if (did) {
       // ─── Returning user (Scenario 2 or 3) ───
       this.logger.log(
         `Returning user payment for ${user.email} (companyId: ${userId})`,
       );
 
-      const did = await this.didModel.findOne({ companyId: userId }).exec();
+      const wasUnmapped =
+        did.unassignedTradieIds && did.unassignedTradieIds.length > 0;
 
-      if (did) {
-        const wasUnmapped =
-          did.unassignedTradieIds && did.unassignedTradieIds.length > 0;
-
-        if (wasUnmapped) {
-          // Scenario 3: Service was stopped by scheduler — restore tradies
-          this.logger.log(
-            `Service was stopped. Remapping tradies for ${user.email}`,
-          );
-          await this.adminService.remapDid(String(did._id));
-        } else {
-          // Scenario 2: Still active — tradies already mapped, just extend
-          this.logger.log(
-            `Service still active. Skipping remap, just renewing for ${user.email}`,
-          );
-        }
-
-        // Always extend the DID subscription.
-        // renewDid() handles extending user.subscriptionExpiresAt by 30 days (what the cron checks).
-        const renewResult = await this.adminService.renewDid(String(did._id));
+      if (wasUnmapped) {
+        // Scenario 3: Service was stopped by scheduler — restore tradies
         this.logger.log(
-          `Returning user ${user.email} renewed. Expires: ${renewResult?.newSubscriptionExpiresAt?.toISOString() ?? 'unknown'}`,
+          `Service was stopped. Remapping tradies for ${user.email}`,
         );
+        await this.adminService.remapDid(String(did._id));
       } else {
-        this.logger.warn(
-          `Returning user has no DID record to remap/renew: ${userId}`,
+        // Scenario 2: Still active — tradies already mapped, just extend
+        this.logger.log(
+          `Service still active. Skipping remap, just renewing for ${user.email}`,
         );
-        // No DID to renew — at minimum mark as paid
-        user.hasPaid = true;
-        user.lastPaymentDate = new Date();
-        await user.save();
       }
+
+      // Always extend the DID subscription.
+      // renewDid() handles extending user.subscriptionExpiresAt by 30 days (what the cron checks).
+      const renewResult = await this.adminService.renewDid(String(did._id));
+      this.logger.log(
+        `Returning user ${user.email} renewed. Expires: ${renewResult?.newSubscriptionExpiresAt?.toISOString() ?? 'unknown'}`,
+      );
     } else {
       // ─── First-time user (Scenario 1) ───
       this.logger.log(
