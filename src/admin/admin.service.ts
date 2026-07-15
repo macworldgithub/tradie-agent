@@ -57,6 +57,7 @@ export class AdminService {
         const tradieCount = await this.tradieModel
           .countDocuments({ companyId: String(company._id) })
           .exec();
+        const portingInfo = await this.numberPortingModel.findOne({ companyId: String(company._id) }).lean().exec();
 
         // Use subscriptionExpiresAt (same field the cron checks) so daysRemaining is consistent
         let daysRemaining = 0;
@@ -87,6 +88,7 @@ export class AdminService {
             ? did.assignedTradieIds && did.assignedTradieIds.length > 0
             : false,
           tradieCount,
+          isPorting: portingInfo?.porting || false,
         };
       }),
     );
@@ -135,6 +137,7 @@ export class AdminService {
       tradies,
       daysRemaining,
       portingInfo,
+      isPorting: portingInfo?.porting || false,
     };
   }
 
