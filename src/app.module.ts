@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { VoiceModule } from './voice/voice.module';
 import { AuthModule } from './auth/auth.module';
 import { AriModule } from './ari/ari.module';
@@ -22,6 +23,10 @@ import { NumberPortingModule } from './number-porting/number-porting.module';
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
+    ServeStaticModule.forRoot({
+      rootPath: process.cwd() + '/uploads',
+      serveRoot: '/uploads',
+    }),
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

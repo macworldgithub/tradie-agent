@@ -15,6 +15,7 @@ import { DidsService } from '../dids/dids.service';
 import { CreateTradieDto } from '../tradies/dtos/create-tradie.dto';
 import { CreateAdminDidDto } from './dtos/create-admin-did.dto';
 import Stripe from 'stripe';
+import { filePathToPublicUrl } from '../common/utils/file-url.util';
 
 @Injectable()
 export class AdminService {
@@ -131,12 +132,20 @@ export class AdminService {
       );
     }
 
+    // Convert file path to public URL if present
+    const portingInfoWithUrl = portingInfo && portingInfo.supportingDocumentPath
+      ? {
+          ...portingInfo,
+          supportingDocumentPath: filePathToPublicUrl(portingInfo.supportingDocumentPath, this.configService),
+        }
+      : portingInfo;
+
     return {
       company,
       did: did ? did.toObject() : null,
       tradies,
       daysRemaining,
-      portingInfo,
+      portingInfo: portingInfoWithUrl,
       isPorting: portingInfo?.porting || false,
     };
   }

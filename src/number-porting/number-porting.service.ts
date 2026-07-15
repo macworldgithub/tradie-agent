@@ -1,16 +1,19 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { ConfigService } from '@nestjs/config';
 import {
   NumberPorting,
   NumberPortingDocument,
 } from './schemas/number-porting.schema';
+import { filePathToPublicUrl } from '../common/utils/file-url.util';
 
 @Injectable()
 export class NumberPortingService {
   constructor(
     @InjectModel(NumberPorting.name)
     private numberPortingModel: Model<NumberPortingDocument>,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -27,6 +30,7 @@ export class NumberPortingService {
   /**
    * Retrieves the document path for a porting record.
    * Ensures the requester is either the company owner or an admin.
+   * Returns a public URL instead of an absolute filesystem path.
    */
   async getDocumentPath(id: string, user: any): Promise<string> {
     const query: any = { _id: id };
@@ -42,6 +46,7 @@ export class NumberPortingService {
       throw new NotFoundException('Document not found');
     }
 
-    return record.supportingDocumentPath;
+    // Convert absolute path to public URL
+    return filePathToPublicUrl(record.supportingDocumentPath, this.configService);
   }
 }
