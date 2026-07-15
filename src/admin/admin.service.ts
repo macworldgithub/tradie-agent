@@ -154,6 +154,22 @@ export class AdminService {
     const company = await this.userModel.findById(companyId).exec();
     if (!company) throw new NotFoundException('Company not found');
 
+    // Delete number porting record and associated PDF file
+    const portingRecord = await this.numberPortingModel.findOne({ companyId }).exec();
+    if (portingRecord && portingRecord.supportingDocumentPath) {
+      // Delete the PDF file from filesystem
+      const fs = require('fs');
+      if (fs.existsSync(portingRecord.supportingDocumentPath)) {
+        try {
+          fs.unlinkSync(portingRecord.supportingDocumentPath);
+        } catch (e) {
+          console.error(`Failed to delete file during company deletion: ${portingRecord.supportingDocumentPath}`, e);
+        }
+      }
+      // Delete the number porting record
+      await this.numberPortingModel.deleteOne({ companyId }).exec();
+    }
+
     await this.tradieModel.deleteMany({ companyId }).exec();
     await this.didModel.deleteMany({ companyId }).exec();
     await this.userModel.findByIdAndDelete(companyId).exec();
