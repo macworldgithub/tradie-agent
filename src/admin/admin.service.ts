@@ -160,11 +160,21 @@ export class AdminService {
     if (portingRecord && portingRecord.supportingDocumentPath) {
       // Delete the PDF file from filesystem
       const fs = require('fs');
+      const path = require('path');
       console.log(`[deleteCompany] Attempting to delete file: ${portingRecord.supportingDocumentPath}`);
       if (fs.existsSync(portingRecord.supportingDocumentPath)) {
         try {
           fs.unlinkSync(portingRecord.supportingDocumentPath);
           console.log(`[deleteCompany] Successfully deleted file: ${portingRecord.supportingDocumentPath}`);
+          
+          // Delete the folder if it's empty
+          const folderPath = path.dirname(portingRecord.supportingDocumentPath);
+          try {
+            fs.rmdirSync(folderPath);
+            console.log(`[deleteCompany] Successfully deleted folder: ${folderPath}`);
+          } catch (e) {
+            console.log(`[deleteCompany] Folder not empty or could not be deleted: ${folderPath}`);
+          }
         } catch (e) {
           console.error(`Failed to delete file during company deletion: ${portingRecord.supportingDocumentPath}`, e);
         }
