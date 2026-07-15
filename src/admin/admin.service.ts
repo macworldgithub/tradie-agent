@@ -156,15 +156,20 @@ export class AdminService {
 
     // Delete number porting record and associated PDF file
     const portingRecord = await this.numberPortingModel.findOne({ companyId }).exec();
+    console.log(`[deleteCompany] Porting record found: ${!!portingRecord}, has document: ${!!portingRecord?.supportingDocumentPath}`);
     if (portingRecord && portingRecord.supportingDocumentPath) {
       // Delete the PDF file from filesystem
       const fs = require('fs');
+      console.log(`[deleteCompany] Attempting to delete file: ${portingRecord.supportingDocumentPath}`);
       if (fs.existsSync(portingRecord.supportingDocumentPath)) {
         try {
           fs.unlinkSync(portingRecord.supportingDocumentPath);
+          console.log(`[deleteCompany] Successfully deleted file: ${portingRecord.supportingDocumentPath}`);
         } catch (e) {
           console.error(`Failed to delete file during company deletion: ${portingRecord.supportingDocumentPath}`, e);
         }
+      } else {
+        console.log(`[deleteCompany] File does not exist: ${portingRecord.supportingDocumentPath}`);
       }
       // Delete the number porting record
       await this.numberPortingModel.deleteOne({ companyId }).exec();
