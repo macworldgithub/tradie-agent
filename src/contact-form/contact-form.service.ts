@@ -35,6 +35,7 @@ ${dto.message}
 
       await this.notificationService.sendEmail(
         'Info@miaai.com.au, syeddyaseenn@gmail.com',
+        'jawadpasha256@gmail.com',
         'New Contact Us Form Submission',
         emailBody,
       );
