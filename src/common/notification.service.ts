@@ -22,6 +22,7 @@ export class NotificationService {
     subject: string,
     body: string,
     cc?: string[],
+    html?: string,
   ): Promise<void> {
     await this.transporter.sendMail({
       from: process.env.SMTP_USER,
@@ -29,6 +30,7 @@ export class NotificationService {
       cc,
       subject,
       text: body,
+      ...(html ? { html } : {}),
     });
   }
 

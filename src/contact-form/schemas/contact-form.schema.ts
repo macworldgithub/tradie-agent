@@ -15,7 +15,10 @@ export class ContactForm {
   email: string;
 
   @Prop({ required: true })
-  message: string;
+  phoneNumber: string;
+
+  @Prop({ required: false })
+  message?: string;
 }
 
 export const ContactFormSchema = SchemaFactory.createForClass(ContactForm);
