@@ -14,8 +14,8 @@ export class ContactForm {
   @Prop({ required: true })
   email: string;
 
-  @Prop({ required: true })
-  phoneNumber: string;
+  @Prop({ required: false })
+  phoneNumber?: string;
 
   @Prop({ required: false })
   message?: string;

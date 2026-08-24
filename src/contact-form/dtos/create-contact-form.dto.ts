@@ -17,10 +17,10 @@ export class CreateContactFormDto {
   @IsNotEmpty()
   email: string;
 
-  @ApiProperty({ example: '+61 412 345 678' })
+  @ApiPropertyOptional({ example: '+61 412 345 678' })
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  phoneNumber: string;
+  phoneNumber?: string;
 
   @ApiPropertyOptional({ example: 'I am interested in your services.' })
   @IsOptional()

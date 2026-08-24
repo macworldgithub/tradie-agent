@@ -29,7 +29,7 @@ export class ContactFormService {
         `First Name:   ${dto.firstName}`,
         `Last Name:    ${dto.lastName}`,
         `Email:        ${dto.email}`,
-        `Phone Number: ${dto.phoneNumber}`,
+        `Phone Number: ${dto.phoneNumber ?? 'N/A'}`,
         `Message:      ${dto.message ?? 'N/A'}`,
       ].join('\n');
 
@@ -54,7 +54,7 @@ export class ContactFormService {
       </tr>
       <tr>
         <td style="padding:10px 12px;font-weight:600;color:#555;border-bottom:1px solid #eee;">Phone Number</td>
-        <td style="padding:10px 12px;border-bottom:1px solid #eee;"><a href="tel:${dto.phoneNumber}" style="color:#4f46e5;">${dto.phoneNumber}</a></td>
+        <td style="padding:10px 12px;border-bottom:1px solid #eee;">${dto.phoneNumber ? `<a href="tel:${dto.phoneNumber}" style="color:#4f46e5;">${dto.phoneNumber}</a>` : '<em style="color:#999;">Not provided</em>'}</td>
       </tr>
       <tr>
         <td style="padding:10px 12px;font-weight:600;color:#555;vertical-align:top;">Message</td>
