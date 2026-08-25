@@ -422,14 +422,19 @@ export class PaymentsService {
         String(user._id),
         'checkout.session.completed',
       );
-      // Still save stripe IDs if missing
+      // Always update stripe IDs.
+      // stripeCustomerId: only set once (never changes for a customer).
+      // stripeSubscriptionId: always overwrite — if the user cancelled and
+      // re-subscribed via Manage Billing, the new checkout creates a brand-new
+      // subscription ID. Without this overwrite the DB would hold the old,
+      // deleted sub ID and future cancel/resume API calls would hit a Stripe 404.
       let changed = false;
       if (customerId && !user.stripeCustomerId) {
         user.stripeCustomerId = customerId;
         changed = true;
       }
-      if (session.subscription && !user.stripeSubscriptionId) {
-        user.stripeSubscriptionId = session.subscription;
+      if (session.subscription) {
+        user.stripeSubscriptionId = session.subscription as string;
         changed = true;
       }
       if (changed) await user.save();
