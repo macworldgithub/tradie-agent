@@ -137,6 +137,8 @@ export class WebhookService {
 
           const asteriskHost =
             this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
+          const asteriskPort =
+            this.configService.get<string>('ASTERISK_SIP_PORT') || '5080';
           const encodedCallId = encodeURIComponent(enfonicaCallId || '');
           const safeCallerId =
             callerNumber && callerNumber.startsWith('+')
@@ -147,7 +149,7 @@ export class WebhookService {
 <Response>
   <Say>Please hold, connecting you to our assistant.</Say>
   <Call CallerId="${safeCallerId}">
-    <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
+    <Endpoint>sip:ai-bridge@${asteriskHost}:${asteriskPort}?X-Call-Id=${encodedCallId}</Endpoint>
   </Call>
 </Response>`;
           console.log(
@@ -249,6 +251,8 @@ export class WebhookService {
 
       const asteriskHost =
         this.configService.get<string>('ASTERISK_SIP_HOST') || '127.0.0.1';
+      const asteriskPort =
+        this.configService.get<string>('ASTERISK_SIP_PORT') || '5080';
       const resolvedCallId2 = resolvedCallId || enfonicaCallId;
       const encodedCallId = encodeURIComponent(resolvedCallId2);
       const safeCallerId =
@@ -258,7 +262,7 @@ export class WebhookService {
 <Response>
   <Say>Please hold, connecting you to our assistant.</Say>
   <Call CallerId="${safeCallerId}">
-    <Endpoint>sip:ai-bridge@${asteriskHost}:5060?X-Call-Id=${encodedCallId}</Endpoint>
+    <Endpoint>sip:ai-bridge@${asteriskHost}:${asteriskPort}?X-Call-Id=${encodedCallId}</Endpoint>
   </Call>
 </Response>`;
       return { type: 'voiceml', body: voiceML };
