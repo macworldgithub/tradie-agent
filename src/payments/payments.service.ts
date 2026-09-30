@@ -321,31 +321,61 @@ export class PaymentsService {
 
   // ─── Webhook Entry Point ────────────────────────────────────────────
 
-  async handleWebhook(signature: string, payload: Buffer) {
+  async handleWebhook(signature: string, payload: Buffer | string) {
     this.logger.log('--- ENTERING PaymentsService.handleWebhook ---');
     if (!this.stripe) throw new BadRequestException('Stripe is not configured');
 
-    const webhookSecret = this.configService.get<string>(
-      'STRIPE_WEBHOOK_SECRET',
-    );
-    if (!webhookSecret)
+    if (!signature) {
+      this.logger.error('❌ [SIGNATURE_MISSING] Missing stripe-signature header');
+      throw new BadRequestException('Missing stripe-signature header');
+    }
+
+    const rawSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
+    if (!rawSecret) {
+      this.logger.error(
+        '❌ [CONFIGURATION_ERROR] STRIPE_WEBHOOK_SECRET is not configured',
+      );
       throw new BadRequestException('Stripe webhook secret not configured');
+    }
+
+    const webhookSecret = rawSecret.trim();
+    const rawPayload = Buffer.isBuffer(payload)
+      ? payload
+      : Buffer.from(payload || '', 'utf-8');
 
     let event: any;
 
     try {
       this.logger.log('Constructing Stripe Event from payload...');
       event = this.stripe.webhooks.constructEvent(
-        payload,
+        rawPayload,
         signature,
         webhookSecret,
       );
       this.logger.log('✅ Stripe Event successfully constructed!');
-    } catch (err) {
-      this.logger.error(
-        `❌ Webhook signature verification failed: ${err.message}`,
-      );
-      throw new BadRequestException(`Webhook Error: ${err.message}`);
+    } catch (err: any) {
+      const isSignatureError =
+        err?.name === 'StripeSignatureVerificationError' ||
+        err?.type === 'StripeSignatureVerificationError' ||
+        err?.message?.includes('No signatures found') ||
+        err?.message?.includes('signature');
+
+      if (isSignatureError) {
+        this.logger.error(
+          `❌ [SIGNATURE_VERIFICATION_FAILED] Webhook signature verification failed: ${err.message}. ` +
+            `Payload length: ${rawPayload.length} bytes, Signature length: ${signature.length}. ` +
+            `Ensure STRIPE_WEBHOOK_SECRET in .env matches the signing secret in Stripe Dashboard.`,
+        );
+        throw new BadRequestException(
+          `Stripe Signature Verification Failed: ${err.message}`,
+        );
+      } else {
+        this.logger.error(
+          `❌ [WEBHOOK_PAYLOAD_ERROR] Failed to construct webhook event: ${err.message}`,
+          err.stack,
+        );
+        throw new BadRequestException(`Webhook Error: ${err.message}`);
+      }
     }
 
     this.logger.log(

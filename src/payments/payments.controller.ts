@@ -12,6 +12,8 @@ import {
   Query,
   Logger,
 } from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request as ExpressRequest, Response } from 'express';
 import { PaymentsService } from './payments.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ApiBearerAuth } from '@nestjs/swagger';
@@ -47,7 +49,10 @@ export class PaymentsController {
   }
 
   @Post('webhook')
-  async handleWebhook(@Req() req: any, @Res() res: any) {
+  async handleWebhook(
+    @Req() req: RawBodyRequest<ExpressRequest>,
+    @Res() res: Response,
+  ) {
     this.logger.log(
       '========================================================================',
     );
@@ -62,9 +67,9 @@ export class PaymentsController {
     );
 
     const payload = req.rawBody;
-    if (!payload) {
+    if (!payload || !Buffer.isBuffer(payload)) {
       this.logger.error(
-        'CRITICAL: Raw body is missing in webhook request. Check main.ts configuration.',
+        'CRITICAL: Raw body is missing or not a Buffer in webhook request. Check main.ts rawBody configuration.',
       );
       throw new BadRequestException(
         'Raw body is missing. Ensure rawBody is enabled in main.ts',
@@ -78,7 +83,7 @@ export class PaymentsController {
         '✅ Webhook successfully processed by service, sending 200 OK',
       );
       res.status(200).send();
-    } catch (err) {
+    } catch (err: any) {
       this.logger.error(
         `❌ Webhook Error caught in controller: ${err.message}`,
       );
